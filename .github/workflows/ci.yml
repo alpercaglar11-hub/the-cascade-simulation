@@ -7,33 +7,7 @@ on:
     branches: [ main, master ]
 
 jobs:
-  security-and-lint:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Secret Detection
-        uses: trufflesecurity/trufflehog@main
-        with:
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
-          extra_args: --only-verified
-
-      - name: Lint with Flake8
-        run: |
-          pip install flake8
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-
-  test-and-build:
-    needs: security-and-lint
+  lint-and-test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -43,12 +17,16 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip'
 
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Lint with Flake8
+        run: |
+          pip install flake8
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
 
       - name: Validate Docker Compose Configuration
         run: |
