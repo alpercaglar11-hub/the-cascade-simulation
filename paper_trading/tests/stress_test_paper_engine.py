@@ -27,9 +27,7 @@ import os
 import time
 import random
 import tracemalloc
-from collections import deque
-from datetime import datetime, timezone
-from typing import List, Dict
+from typing import List
 
 from paper_trading.engine import (
     PaperExchange,
@@ -38,8 +36,8 @@ from paper_trading.engine import (
 )
 from paper_trading.orchestrator import PaperTradingOrchestrator, PaperTradingConfig
 
-
 # ── Metric Collection Utilities ─────────────────────────────────────────────────
+
 
 class MetricsCollector:
     """Collects latency, throughput, and event statistics during a stress run."""
@@ -103,11 +101,14 @@ class MetricsCollector:
             "latency_p95_ms": round(self.percentile(95), 3),
             "latency_p99_ms": round(self.percentile(99), 3),
             "max_queue_depth": max(self.queue_depths) if self.queue_depths else 0,
-            "peak_memory_mb": round(max(self.memory_samples) if self.memory_samples else 0, 3),
+            "peak_memory_mb": round(
+                max(self.memory_samples) if self.memory_samples else 0, 3
+            ),
         }
 
 
 # ── Stress Test Scenarios ───────────────────────────────────────────────────────
+
 
 class TestEventStormStress:
     """Scenario 1: Sustained 1000+ events/sec with order book activity."""
@@ -171,9 +172,15 @@ class TestEventStormStress:
         print(f"  Stop triggered:  {stop_triggered}")
 
         # Assertions
-        assert summary["events_processed"] >= 4900, f"Too many events dropped: {summary['events_dropped']}"
-        assert summary["duplicates_detected"] == 0, f"Duplicate fills detected: {summary['duplicates_detected']}"
-        assert summary["latency_p99_ms"] < 50, f"p99 latency too high under load: {summary['latency_p99_ms']}ms"
+        assert (
+            summary["events_processed"] >= 4900
+        ), f"Too many events dropped: {summary['events_dropped']}"
+        assert (
+            summary["duplicates_detected"] == 0
+        ), f"Duplicate fills detected: {summary['duplicates_detected']}"
+        assert (
+            summary["latency_p99_ms"] < 50
+        ), f"p99 latency too high under load: {summary['latency_p99_ms']}ms"
         assert stop_triggered, "Stop loss did not trigger during price decline"
 
 
@@ -189,7 +196,9 @@ class TestCascadingTriggerStress:
         """
         # Use large top_of_book_depth so the 10 BTC buy fills completely
         # (avoids PartialFillSimulator limiting to 40% = 4 BTC per tick)
-        ex = PaperExchange(initial_capital=5_000_000.0, base_latency_ms=0.0, top_of_book_depth=100.0)
+        ex = PaperExchange(
+            initial_capital=5_000_000.0, base_latency_ms=0.0, top_of_book_depth=100.0
+        )
         await ex.connect()
         await ex._update_price("BTC/USDT", 50_000.0)
 
@@ -221,7 +230,9 @@ class TestCascadingTriggerStress:
         filled_ids = []
         for sid in stop_ids:
             order = await ex.get_order(sid, "BTC/USDT")
-            assert order["status"] == "filled", f"Order {sid} not filled: {order['status']}"
+            assert (
+                order["status"] == "filled"
+            ), f"Order {sid} not filled: {order['status']}"
             filled_ids.append(sid)
 
         unique_fills = len(set(filled_ids))
@@ -260,7 +271,9 @@ class TestMultiSymbolBurstStress:
         stop_ids = {}
         for sym in symbols:
             await ex.place_market_order(sym, "buy", 1.0)
-            result = await ex.place_stop_loss(sym, "sell", 1.0, stop_price=base_prices[sym] * 0.95)
+            result = await ex.place_stop_loss(
+                sym, "sell", 1.0, stop_price=base_prices[sym] * 0.95
+            )
             stop_ids[sym] = result["id"]
 
         # Concurrent burst: 500 updates per symbol
@@ -276,16 +289,16 @@ class TestMultiSymbolBurstStress:
             await asyncio.gather(*tasks)
 
         start = time.monotonic()
-        await asyncio.gather(*[
-            burst_symbol(sym, base_prices[sym]) for sym in symbols
-        ])
+        await asyncio.gather(*[burst_symbol(sym, base_prices[sym]) for sym in symbols])
         elapsed = time.monotonic() - start
 
         # Verify final prices
         for sym in symbols:
             final_price = ex._get_price(sym)
             expected = per_symbol_updates[sym][-1]
-            assert abs(final_price - expected) < 0.01, f"{sym}: expected {expected}, got {final_price}"
+            assert (
+                abs(final_price - expected) < 0.01
+            ), f"{sym}: expected {expected}, got {final_price}"
 
         total_events = NUM_UPDATES * len(symbols)
         print(f"\n=== Multi-Symbol Burst Results ===")
@@ -299,7 +312,10 @@ class TestMultiSymbolBurstStress:
         for sym in symbols:
             order = await ex.get_order(stop_ids[sym], sym)
             # Stop was at 95% of base; final price is higher — should still be open
-            assert order["status"] in ("open", "filled"), f"{sym}: unexpected status {order['status']}"
+            assert order["status"] in (
+                "open",
+                "filled",
+            ), f"{sym}: unexpected status {order['status']}"
 
 
 class TestLockContentionStress:
@@ -338,7 +354,9 @@ class TestLockContentionStress:
         print(f"  Wall time:            {elapsed_ms:.1f}ms")
         print(f"  Avg per order:        {elapsed_ms / NUM_ORDERS:.2f}ms")
 
-        assert len(errors) == 0, f"Order placement errors under concurrency: {errors[:3]}"
+        assert (
+            len(errors) == 0
+        ), f"Order placement errors under concurrency: {errors[:3]}"
         assert len(successes) == NUM_ORDERS
 
 
@@ -395,7 +413,9 @@ class TestMemoryGrowthStress:
         print(f"  Open orders:        {len(ex._open_limit_orders)}")
         print(f"  Memory snapshots:   {[f'{m:.1f}' for m in memory_snapshots]}")
 
-        assert growth_mb < 100, f"Excessive memory growth detected: {growth_mb:.1f}MB (possible leak)"
+        assert (
+            growth_mb < 100
+        ), f"Excessive memory growth detected: {growth_mb:.1f}MB (possible leak)"
 
 
 class TestBackpressureStress:
@@ -469,7 +489,8 @@ class TestDuplicateFillPreventionStress:
 
         # Count how many filled orders have this ID in the order book
         filled_orders = [
-            o for o in ex._orders.values()
+            o
+            for o in ex._orders.values()
             if o.status == "filled" and o.order_type == "stop_loss"
         ]
 
@@ -478,7 +499,9 @@ class TestDuplicateFillPreventionStress:
         print(f"  Stop status:          {order['status']}")
         print(f"  Stop-loss fill count: {len(filled_orders)}")
 
-        assert len(filled_orders) == 1, f"DUPLICATE FILL BUG: {len(filled_orders)} fills for 1 order"
+        assert (
+            len(filled_orders) == 1
+        ), f"DUPLICATE FILL BUG: {len(filled_orders)} fills for 1 order"
 
 
 class TestSlowConsumerStress:
@@ -511,7 +534,9 @@ class TestSlowConsumerStress:
         print(f"  Stop filled via primary:    {primary_triggered}")
         print(f"  Monitor check interval:      500ms (would fail if relied upon)")
 
-        assert primary_triggered, "Primary path did not trigger stop — monitor-dependent bug!"
+        assert (
+            primary_triggered
+        ), "Primary path did not trigger stop — monitor-dependent bug!"
         assert primary_elapsed_ms < 10, f"Primary path too slow: {primary_elapsed_ms}ms"
 
 
@@ -530,8 +555,7 @@ class TestOverloadRecoveryStress:
 
         # Phase 1: Overload burst — 2000 updates where price RISES from 50k to 51k
         burst_tasks = [
-            ex._update_price("BTC/USDT", 50_000.0 + i * 0.5)
-            for i in range(2000)
+            ex._update_price("BTC/USDT", 50_000.0 + i * 0.5) for i in range(2000)
         ]
         await asyncio.gather(*burst_tasks)
 
@@ -548,7 +572,9 @@ class TestOverloadRecoveryStress:
         print(f"\n=== Overload Recovery Results ===")
         print(f"  Post-burst order status: {order['status']}")
         print(f"  Post-burst BTC balance:   {btc_bal}")
-        print(f"  System operational:       {order['status'] == 'filled' and btc_bal < 0.01}")
+        print(
+            f"  System operational:       {order['status'] == 'filled' and btc_bal < 0.01}"
+        )
 
         assert order["status"] == "filled"
         assert btc_bal < 0.01
@@ -617,15 +643,21 @@ class TestLatencyHistogramStress:
             try:
                 op = idx % 10
                 if op < 5:  # 50% price updates
-                    await ex._update_price("BTC/USDT", 50_000.0 + random.uniform(-500, 500))
+                    await ex._update_price(
+                        "BTC/USDT", 50_000.0 + random.uniform(-500, 500)
+                    )
                 elif op < 8:  # 30% limit orders
                     await ex.place_limit_order(
-                        "BTC/USDT", "buy", 0.1,
-                        price=50_000.0 + random.uniform(-1000, 1000)
+                        "BTC/USDT",
+                        "buy",
+                        0.1,
+                        price=50_000.0 + random.uniform(-1000, 1000),
                     )
                 else:  # 20% stop placements
                     stop_price = 50_000.0 - (idx % 100) * 50
-                    await ex.place_stop_loss("BTC/USDT", "sell", 0.1, stop_price=stop_price)
+                    await ex.place_stop_loss(
+                        "BTC/USDT", "sell", 0.1, stop_price=stop_price
+                    )
                     stop_orders_placed += 1
                     await ex._update_price("BTC/USDT", stop_price - 100)
                     stops_triggered += 1

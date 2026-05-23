@@ -3,7 +3,12 @@
 import asyncio
 from typing import Optional, Literal
 import ccxt
-from tenacity import retry, stop_after_attempt, wait_exponential_jitter, retry_if_exception_type
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential_jitter,
+    retry_if_exception_type,
+)
 from config.settings import settings
 from logging.logger import get_logger
 
@@ -161,7 +166,12 @@ class ExchangeService:
 
         self._order_poller = OrderPoller(self._exchange, self._symbol)
         self._connected = True
-        log.info("exchange_connected", exchange="binance", testnet=settings.binance_testnet, symbol=self._symbol)
+        log.info(
+            "exchange_connected",
+            exchange="binance",
+            testnet=settings.binance_testnet,
+            symbol=self._symbol,
+        )
 
         # Reconcile on startup
         await self._reconcile_on_startup()
@@ -174,6 +184,7 @@ class ExchangeService:
         """Throttle with jitter to avoid burst collisions."""
         async with self._rate_limiter_lock:
             import random
+
             await asyncio.sleep(0.2 + random.uniform(0, 0.1))
 
     def _get_order_lock(self, symbol: str) -> asyncio.Lock:
@@ -216,9 +227,13 @@ class ExchangeService:
             "timestamp": ticker.get("timestamp"),
         }
 
-    async def get_ohlcv(self, symbol: str, timeframe: str = "1m", limit: int = 100) -> list:
+    async def get_ohlcv(
+        self, symbol: str, timeframe: str = "1m", limit: int = 100
+    ) -> list:
         await self._ensure_connected()
-        data = await self._request(self._exchange.fetchOHLCV, symbol, timeframe, {"limit": limit})
+        data = await self._request(
+            self._exchange.fetchOHLCV, symbol, timeframe, {"limit": limit}
+        )
         return [
             {
                 "timestamp": c[0],
@@ -232,7 +247,11 @@ class ExchangeService:
         ]
 
     async def place_market_order(
-        self, symbol: str, side: Literal["buy", "sell"], amount: float, idempotency_key: str = ""
+        self,
+        symbol: str,
+        side: Literal["buy", "sell"],
+        amount: float,
+        idempotency_key: str = "",
     ) -> dict:
         """
         Place market order with idempotency key.
@@ -241,20 +260,34 @@ class ExchangeService:
         await self._ensure_connected()
 
         if idempotency_key and self._idempotency_store:
-            acquired = await self._idempotency_store.try_acquire(f"idempotency:{idempotency_key}")
+            acquired = await self._idempotency_store.try_acquire(
+                f"idempotency:{idempotency_key}"
+            )
             if not acquired:
                 log.warning("duplicate_order_rejected", idempotency_key=idempotency_key)
-                raise DuplicateOrderError(f"Order with idempotency key {idempotency_key} already in flight")
+                raise DuplicateOrderError(
+                    f"Order with idempotency key {idempotency_key} already in flight"
+                )
 
         order_lock = self._get_order_lock(symbol)
         async with order_lock:
             try:
-                log.info("order_placing", symbol=symbol, side=side, type="market", amount=amount)
-                order = await self._request(self._exchange.createMarketOrder, symbol, side, amount)
+                log.info(
+                    "order_placing",
+                    symbol=symbol,
+                    side=side,
+                    type="market",
+                    amount=amount,
+                )
+                order = await self._request(
+                    self._exchange.createMarketOrder, symbol, side, amount
+                )
                 parsed = self._parse_order(order)
 
                 if idempotency_key and self._idempotency_store:
-                    await self._idempotency_store.release(f"idempotency:{idempotency_key}")
+                    await self._idempotency_store.release(
+                        f"idempotency:{idempotency_key}"
+                    )
 
                 return parsed
 
@@ -262,30 +295,53 @@ class ExchangeService:
                 # Idempotency key is NOT released on failure — order may still have been placed
                 # Poll exchange to determine true state
                 if idempotency_key:
-                    log.warning("order_error_checking_exchange", error=str(e), idempotency_key=idempotency_key)
+                    log.warning(
+                        "order_error_checking_exchange",
+                        error=str(e),
+                        idempotency_key=idempotency_key,
+                    )
                     # Attempt to reconcile via polling — see if the order exists now
                     await self._reconcile_suspected_order(symbol, idempotency_key)
                 raise
 
     async def place_limit_order(
-        self, symbol: str, side: Literal["buy", "sell"], amount: float, price: float,
-        idempotency_key: str = ""
+        self,
+        symbol: str,
+        side: Literal["buy", "sell"],
+        amount: float,
+        price: float,
+        idempotency_key: str = "",
     ) -> dict:
         await self._ensure_connected()
 
         if idempotency_key and self._idempotency_store:
-            acquired = await self._idempotency_store.try_acquire(f"idempotency:{idempotency_key}")
+            acquired = await self._idempotency_store.try_acquire(
+                f"idempotency:{idempotency_key}"
+            )
             if not acquired:
-                raise DuplicateOrderError(f"Order with idempotency key {idempotency_key} already in flight")
+                raise DuplicateOrderError(
+                    f"Order with idempotency key {idempotency_key} already in flight"
+                )
 
         order_lock = self._get_order_lock(symbol)
         async with order_lock:
             try:
-                log.info("order_placing", symbol=symbol, side=side, type="limit", amount=amount, price=price)
-                order = await self._request(self._exchange.createLimitOrder, symbol, side, amount, price)
+                log.info(
+                    "order_placing",
+                    symbol=symbol,
+                    side=side,
+                    type="limit",
+                    amount=amount,
+                    price=price,
+                )
+                order = await self._request(
+                    self._exchange.createLimitOrder, symbol, side, amount, price
+                )
                 parsed = self._parse_order(order)
                 if idempotency_key and self._idempotency_store:
-                    await self._idempotency_store.release(f"idempotency:{idempotency_key}")
+                    await self._idempotency_store.release(
+                        f"idempotency:{idempotency_key}"
+                    )
                 return parsed
             except Exception as e:
                 if idempotency_key:
@@ -293,26 +349,56 @@ class ExchangeService:
                 raise
 
     async def place_stop_loss(
-        self, symbol: str, side: Literal["buy", "sell"], amount: float, stop_price: float
+        self,
+        symbol: str,
+        side: Literal["buy", "sell"],
+        amount: float,
+        stop_price: float,
     ) -> dict:
         await self._ensure_connected()
         params = {"stopPrice": stop_price}
-        log.info("order_placing", symbol=symbol, side=side, type="stop_loss", amount=amount, stop_price=stop_price)
+        log.info(
+            "order_placing",
+            symbol=symbol,
+            side=side,
+            type="stop_loss",
+            amount=amount,
+            stop_price=stop_price,
+        )
         order = await self._request(
             self._exchange.createStopLossLimitOrder,
-            symbol, side, amount, stop_price, params,
+            symbol,
+            side,
+            amount,
+            stop_price,
+            params,
         )
         return self._parse_order(order)
 
     async def place_take_profit(
-        self, symbol: str, side: Literal["buy", "sell"], amount: float, take_profit_price: float
+        self,
+        symbol: str,
+        side: Literal["buy", "sell"],
+        amount: float,
+        take_profit_price: float,
     ) -> dict:
         await self._ensure_connected()
         params = {"stopPrice": take_profit_price}
-        log.info("order_placing", symbol=symbol, side=side, type="take_profit", amount=amount, tp_price=take_profit_price)
+        log.info(
+            "order_placing",
+            symbol=symbol,
+            side=side,
+            type="take_profit",
+            amount=amount,
+            tp_price=take_profit_price,
+        )
         order = await self._request(
             self._exchange.createTakeProfitLimitOrder,
-            symbol, side, amount, take_profit_price, params,
+            symbol,
+            side,
+            amount,
+            take_profit_price,
+            params,
         )
         return self._parse_order(order)
 
@@ -363,7 +449,9 @@ class ExchangeService:
             "fee": order.get("fee", {}),
         }
 
-    async def _reconcile_suspected_order(self, symbol: str, idempotency_key: str) -> None:
+    async def _reconcile_suspected_order(
+        self, symbol: str, idempotency_key: str
+    ) -> None:
         """After a failed order request, poll exchange to check if order was placed."""
         log.info("reconcile_suspected_order", symbol=symbol, key=idempotency_key)
         if self._order_poller:

@@ -4,9 +4,7 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from dataclasses import dataclass
-from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
-import json
 
 from config.settings import settings
 from logging.logger import get_logger
@@ -89,7 +87,9 @@ class RiskEngine:
             # Load kill switch
             killswitch_raw = await self._redis_client.get(_KILLSWITCH_KEY)
             if killswitch_raw is not None:
-                self._killswitch_active = killswitch_raw == b"1" or killswitch_raw == "1"
+                self._killswitch_active = (
+                    killswitch_raw == b"1" or killswitch_raw == "1"
+                )
                 log.info("risk_killswitch_loaded", active=self._killswitch_active)
 
             # Load consecutive losses
@@ -100,9 +100,15 @@ class RiskEngine:
             # Load cooldown
             cooldown_raw = await self._redis_client.get(_COOLDOWN_KEY)
             if cooldown_raw:
-                cooldown_str = cooldown_raw.decode() if isinstance(cooldown_raw, bytes) else cooldown_raw
+                cooldown_str = (
+                    cooldown_raw.decode()
+                    if isinstance(cooldown_raw, bytes)
+                    else cooldown_raw
+                )
                 self._state.cooldown_until = datetime.fromisoformat(cooldown_str)
-                log.info("risk_cooldown_loaded", until=self._state.cooldown_until.isoformat())
+                log.info(
+                    "risk_cooldown_loaded", until=self._state.cooldown_until.isoformat()
+                )
 
         except Exception as e:
             log.error("risk_persistent_state_load_error", error=str(e))
@@ -111,7 +117,9 @@ class RiskEngine:
         if not self._redis_client:
             return
         try:
-            await self._redis_client.set(_KILLSWITCH_KEY, "1" if active else "0", ex=None)
+            await self._redis_client.set(
+                _KILLSWITCH_KEY, "1" if active else "0", ex=None
+            )
         except Exception as e:
             log.error("risk_killswitch_persist_error", error=str(e))
 
@@ -119,7 +127,9 @@ class RiskEngine:
         if not self._redis_client:
             return
         try:
-            await self._redis_client.set(_CONSECUTIVE_LOSSES_KEY, str(self._state.consecutive_losses), ex=None)
+            await self._redis_client.set(
+                _CONSECUTIVE_LOSSES_KEY, str(self._state.consecutive_losses), ex=None
+            )
         except Exception as e:
             log.error("risk_consecutive_losses_persist_error", error=str(e))
 
@@ -150,7 +160,9 @@ class RiskEngine:
         killswitch_val = await self._get_killswitch()
         if killswitch_val or self._killswitch_active:
             await self._log_event("killswitch", symbol, "Kill switch is active")
-            return RiskCheckResult(allowed=False, reason="Kill switch is active", severity="critical")
+            return RiskCheckResult(
+                allowed=False, reason="Kill switch is active", severity="critical"
+            )
 
         # 2. Cooldown — always check Redis for expiry
         cooldown_until = await self._get_cooldown()
@@ -163,10 +175,16 @@ class RiskEngine:
             )
 
         # 3. Daily loss limit
-        daily_loss_limit = self._state.total_equity * (self._limits.max_daily_loss_pct / 100)
+        daily_loss_limit = self._state.total_equity * (
+            self._limits.max_daily_loss_pct / 100
+        )
         if self._state.daily_pnl < -daily_loss_limit:
             await self._activate_cooldown("Daily loss limit exceeded")
-            await self._log_event("daily_loss_limit", symbol, f"Daily PnL: {self._state.daily_pnl}, limit: -{daily_loss_limit:.2f}")
+            await self._log_event(
+                "daily_loss_limit",
+                symbol,
+                f"Daily PnL: {self._state.daily_pnl}, limit: -{daily_loss_limit:.2f}",
+            )
             return RiskCheckResult(
                 allowed=False,
                 reason=f"Daily loss limit reached: {self._state.daily_pnl:.2f}",
@@ -175,9 +193,18 @@ class RiskEngine:
 
         # 4. Position size limit
         position_value = size * price
-        if position_value > self._limits.max_position_size_pct / 100 * self._state.total_equity:
-            max_allowed_value = self._limits.max_position_size_pct / 100 * self._state.total_equity
-            await self._log_event("position_size_limit", symbol, f"Requested: {position_value:.2f}, max: {max_allowed_value:.2f}")
+        if (
+            position_value
+            > self._limits.max_position_size_pct / 100 * self._state.total_equity
+        ):
+            max_allowed_value = (
+                self._limits.max_position_size_pct / 100 * self._state.total_equity
+            )
+            await self._log_event(
+                "position_size_limit",
+                symbol,
+                f"Requested: {position_value:.2f}, max: {max_allowed_value:.2f}",
+            )
             return RiskCheckResult(
                 allowed=False,
                 reason=f"Position size ${position_value:.2f} exceeds max ${max_allowed_value:.2f}",
@@ -185,7 +212,10 @@ class RiskEngine:
             )
 
         # 5. Open positions limit
-        if action == "BUY" and self._state.open_position_count >= self._limits.max_open_positions:
+        if (
+            action == "BUY"
+            and self._state.open_position_count >= self._limits.max_open_positions
+        ):
             return RiskCheckResult(
                 allowed=False,
                 reason=f"Max open positions reached ({self._limits.max_open_positions})",
@@ -194,7 +224,11 @@ class RiskEngine:
 
         # 6. Loss streak
         if self._state.consecutive_losses >= 3:
-            await self._log_event("loss_streak", symbol, f"Consecutive losses: {self._state.consecutive_losses}")
+            await self._log_event(
+                "loss_streak",
+                symbol,
+                f"Consecutive losses: {self._state.consecutive_losses}",
+            )
             return RiskCheckResult(
                 allowed=False,
                 reason=f"Loss streak of {self._state.consecutive_losses} — cooling down",
@@ -214,7 +248,9 @@ class RiskEngine:
             self._state.last_loss_at = now
             await self._persist_consecutive_losses()
             if self._state.consecutive_losses >= 3:
-                await self._activate_cooldown(f"3 consecutive losses, last PnL: {pnl:.2f}")
+                await self._activate_cooldown(
+                    f"3 consecutive losses, last PnL: {pnl:.2f}"
+                )
         else:
             self._state.consecutive_losses = 0
             await self._persist_consecutive_losses()
@@ -267,8 +303,12 @@ class RiskEngine:
 
                     # Count open positions + sum equity in one pass
                     pos_result = await session.execute(
-                        select(func.count(Pos.id), func.sum(Pos.quantity * (Pos.current_price or Pos.entry_price)))
-                        .where(Pos.status == "OPEN")
+                        select(
+                            func.count(Pos.id),
+                            func.sum(
+                                Pos.quantity * (Pos.current_price or Pos.entry_price)
+                            ),
+                        ).where(Pos.status == "OPEN")
                     )
                     row = pos_result.one()
                     self._state.open_position_count = int(row[0] or 0)
@@ -279,15 +319,25 @@ class RiskEngine:
                 self._state.total_equity = max(self._state.total_equity, 1000.0)
 
     async def _activate_cooldown(self, reason: str) -> None:
-        self._state.cooldown_until = datetime.now(timezone.utc) + timedelta(minutes=self._limits.cooldown_minutes)
+        self._state.cooldown_until = datetime.now(timezone.utc) + timedelta(
+            minutes=self._limits.cooldown_minutes
+        )
         await self._persist_cooldown()
         await self._log_event("cooldown_activated", None, reason)
-        log.warning("risk_cooldown_activated", reason=reason, minutes=self._limits.cooldown_minutes)
+        log.warning(
+            "risk_cooldown_activated",
+            reason=reason,
+            minutes=self._limits.cooldown_minutes,
+        )
 
-    async def _log_event(self, event_type: str, symbol: Optional[str], details: str) -> None:
+    async def _log_event(
+        self, event_type: str, symbol: Optional[str], details: str
+    ) -> None:
         try:
             async with async_session_factory() as session:
-                session.add(RiskEvent(event_type=event_type, symbol=symbol, details=details))
+                session.add(
+                    RiskEvent(event_type=event_type, symbol=symbol, details=details)
+                )
                 await session.commit()
         except Exception as e:
             log.error("risk_event_log_error", error=str(e))
@@ -298,6 +348,7 @@ class RiskEngine:
             async with async_session_factory() as session:
                 from sqlalchemy import select
                 from db.models import DailyStats as DS
+
                 result = await session.execute(select(DS).where(DS.date == today))
                 stats = result.scalar_one_or_none()
                 if stats:
@@ -312,15 +363,17 @@ class RiskEngine:
                         if pnl < (stats.largest_loss or 0):
                             stats.largest_loss = pnl
                 else:
-                    session.add(DS(
-                        date=today,
-                        total_pnl=pnl,
-                        trade_count=1,
-                        win_count=1 if pnl > 0 else 0,
-                        loss_count=1 if pnl <= 0 else 0,
-                        largest_win=max(pnl, 0),
-                        largest_loss=min(pnl, 0),
-                    ))
+                    session.add(
+                        DS(
+                            date=today,
+                            total_pnl=pnl,
+                            trade_count=1,
+                            win_count=1 if pnl > 0 else 0,
+                            loss_count=1 if pnl <= 0 else 0,
+                            largest_win=max(pnl, 0),
+                            largest_loss=min(pnl, 0),
+                        )
+                    )
                 await session.commit()
         except Exception as e:
             log.error("daily_stats_persist_error", error=str(e))
@@ -351,7 +404,8 @@ class RiskEngine:
             "consecutive_losses": self._state.consecutive_losses,
             "open_positions": self._state.open_position_count,
             "total_equity": round(self._state.total_equity, 4),
-            "cooldown_active": cooldown_until is not None and datetime.now(timezone.utc) < cooldown_until,
+            "cooldown_active": cooldown_until is not None
+            and datetime.now(timezone.utc) < cooldown_until,
             "cooldown_until": cooldown_until.isoformat() if cooldown_until else None,
             "limits": {
                 "max_daily_loss_pct": self._limits.max_daily_loss_pct,

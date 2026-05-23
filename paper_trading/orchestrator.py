@@ -14,7 +14,6 @@ Manages the paper trading environment end-to-end:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
 from typing import Optional, Literal, TYPE_CHECKING
 from dataclasses import dataclass
 
@@ -30,6 +29,7 @@ log = get_logger(__name__)
 @dataclass
 class PaperTradingConfig:
     """Configuration for the paper trading environment."""
+
     initial_capital: float = 10_000.0
     maker_fee_bps: float = 5.0
     taker_fee_bps: float = 10.0
@@ -99,6 +99,7 @@ class PaperTradingOrchestrator:
             )
 
         from paper_trading.engine import PaperExchange
+
         self._paper_exchange = PaperExchange(
             initial_capital=self._config.initial_capital,
             maker_fee_bps=self._config.maker_fee_bps,
@@ -111,6 +112,7 @@ class PaperTradingOrchestrator:
 
         # ── Portfolio Tracker ──────────────────────────────────────────────────
         from paper_trading.portfolio import PortfolioTracker
+
         self._portfolio = PortfolioTracker(
             redis_client=self._redis,
             initial_capital=self._config.initial_capital,
@@ -217,10 +219,17 @@ class PaperTradingOrchestrator:
             "current_equity": metrics.current_equity,
             "initial_capital": self._config.initial_capital,
             "roi_pct": round(
-                (metrics.current_equity - self._config.initial_capital) / self._config.initial_capital * 100, 4
+                (metrics.current_equity - self._config.initial_capital)
+                / self._config.initial_capital
+                * 100,
+                4,
             ),
             "win_rate": metrics.stats.win_rate,
-            "profit_factor": float(metrics.stats.profit_factor) if metrics.stats.profit_factor != float("inf") else "inf",
+            "profit_factor": (
+                float(metrics.stats.profit_factor)
+                if metrics.stats.profit_factor != float("inf")
+                else "inf"
+            ),
             "max_drawdown_pct": metrics.max_drawdown,
             "sharpe_ratio": metrics.sharpe_ratio,
             "expectancy": metrics.stats.expectancy,
@@ -265,6 +274,7 @@ async def get_paper_orchestrator() -> PaperTradingOrchestrator:
     global _paper_orchestrator
     if _paper_orchestrator is None:
         from services.cache import get_redis
+
         redis = await get_redis()
         _paper_orchestrator = PaperTradingOrchestrator(redis_client=redis)
         await _paper_orchestrator.start()

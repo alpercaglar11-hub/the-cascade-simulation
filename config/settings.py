@@ -71,16 +71,16 @@ class Settings(BaseSettings):
     emergency_kill_switch: bool = False
 
     # Paper Trading
-    paper_trading_mode: bool = True          # Swap to False to use real exchange
-    paper_initial_capital: float = 10_000.0   # Starting USDT balance
-    paper_maker_fee_bps: float = 5.0          # 0.05%
-    paper_taker_fee_bps: float = 10.0         # 0.10%
-    paper_base_latency_ms: float = 50.0      # Simulated network latency
-    paper_adv: float = 1_000_000.0            # Average daily volume (quote currency)
-    paper_volatility: float = 1.5             # Initial volatility % for slippage
-    paper_enable_downtime: bool = False        # Simulate exchange downtime
-    paper_downtime_prob: float = 0.001        # Probability per call
-    paper_latency_spike_prob: float = 0.05    # Probability of latency spike
+    paper_trading_mode: bool = True  # Swap to False to use real exchange
+    paper_initial_capital: float = 10_000.0  # Starting USDT balance
+    paper_maker_fee_bps: float = 5.0  # 0.05%
+    paper_taker_fee_bps: float = 10.0  # 0.10%
+    paper_base_latency_ms: float = 50.0  # Simulated network latency
+    paper_adv: float = 1_000_000.0  # Average daily volume (quote currency)
+    paper_volatility: float = 1.5  # Initial volatility % for slippage
+    paper_enable_downtime: bool = False  # Simulate exchange downtime
+    paper_downtime_prob: float = 0.001  # Probability per call
+    paper_latency_spike_prob: float = 0.05  # Probability of latency spike
 
     # Monitoring
     sentry_dsn: str = ""

@@ -16,48 +16,68 @@ from paper_trading.engine import (
 from paper_trading.portfolio import PortfolioTracker
 from paper_trading.orchestrator import PaperTradingOrchestrator, PaperTradingConfig
 
-
 # ── Slippage Model Tests ────────────────────────────────────────────────────────
+
 
 class TestSlippageModel:
     def test_market_order_has_slippage(self):
-        slip = SlippageModel.compute(order_value=1000, adv=1_000_000, volatility_pct=1.5, is_market=True)
+        slip = SlippageModel.compute(
+            order_value=1000, adv=1_000_000, volatility_pct=1.5, is_market=True
+        )
         assert slip > 0
 
     def test_limit_order_has_zero_slippage(self):
-        slip = SlippageModel.compute(order_value=1000, adv=1_000_000, volatility_pct=1.5, is_market=False)
+        slip = SlippageModel.compute(
+            order_value=1000, adv=1_000_000, volatility_pct=1.5, is_market=False
+        )
         assert slip == 0.0
 
     def test_large_order_has_higher_slippage(self):
-        slip_small = SlippageModel.compute(order_value=100, adv=1_000_000, volatility_pct=1.5, is_market=True)
-        slip_large = SlippageModel.compute(order_value=50_000, adv=1_000_000, volatility_pct=1.5, is_market=True)
+        slip_small = SlippageModel.compute(
+            order_value=100, adv=1_000_000, volatility_pct=1.5, is_market=True
+        )
+        slip_large = SlippageModel.compute(
+            order_value=50_000, adv=1_000_000, volatility_pct=1.5, is_market=True
+        )
         assert slip_large > slip_small
 
     def test_high_volatility_increases_slippage(self):
-        slip_low_vol = SlippageModel.compute(order_value=1000, adv=1_000_000, volatility_pct=0.5, is_market=True)
-        slip_high_vol = SlippageModel.compute(order_value=1000, adv=1_000_000, volatility_pct=5.0, is_market=True)
+        slip_low_vol = SlippageModel.compute(
+            order_value=1000, adv=1_000_000, volatility_pct=0.5, is_market=True
+        )
+        slip_high_vol = SlippageModel.compute(
+            order_value=1000, adv=1_000_000, volatility_pct=5.0, is_market=True
+        )
         assert slip_high_vol > slip_low_vol
 
 
 # ── Partial Fill Tests ─────────────────────────────────────────────────────────
 
+
 class TestPartialFillSimulator:
     def test_small_order_no_partial_fill(self):
-        should = PartialFillSimulator.should_partial_fill(quantity=1.0, top_of_book_depth=50.0)
+        should = PartialFillSimulator.should_partial_fill(
+            quantity=1.0, top_of_book_depth=50.0
+        )
         assert should is False
 
     def test_large_order_triggers_partial_fill(self):
-        should = PartialFillSimulator.should_partial_fill(quantity=10.0, top_of_book_depth=50.0)
+        should = PartialFillSimulator.should_partial_fill(
+            quantity=10.0, top_of_book_depth=50.0
+        )
         assert should is True
 
     def test_fill_schedule_proportions(self):
-        schedule = PartialFillSimulator.compute_fill_schedule(quantity=100.0, top_of_book_depth=10.0, num_ticks=3)
+        schedule = PartialFillSimulator.compute_fill_schedule(
+            quantity=100.0, top_of_book_depth=10.0, num_ticks=3
+        )
         assert len(schedule) == 3
         assert schedule[0] == pytest.approx(40.0)
         assert sum(schedule[1:]) == pytest.approx(60.0)
 
 
 # ── Downtime Simulator Tests ───────────────────────────────────────────────────
+
 
 class TestDowntimeSimulator:
     @pytest.mark.asyncio
@@ -69,12 +89,15 @@ class TestDowntimeSimulator:
 
     @pytest.mark.asyncio
     async def test_latency_spike_triggered(self):
-        sim = DowntimeSimulator(latency_spike_probability=1.0, max_latency_spike_ms=100.0)
+        sim = DowntimeSimulator(
+            latency_spike_probability=1.0, max_latency_spike_ms=100.0
+        )
         latency = await sim.maybe_simulate_latency()
         assert latency > 0
 
 
 # ── Paper Exchange Tests ───────────────────────────────────────────────────────
+
 
 class TestPaperExchange:
     @pytest.mark.asyncio
@@ -203,7 +226,6 @@ class TestPaperExchange:
         bal = await ex.get_balance("USDT")
         assert bal == 10_000.0
 
-
     # ── Event-Driven Execution Tests ───────────────────────────────────────────
 
     @pytest.mark.asyncio
@@ -230,7 +252,8 @@ class TestPaperExchange:
 
         # Verify exactly one fill occurred — no duplicates
         filled_orders = [
-            o for o in ex._orders.values()
+            o
+            for o in ex._orders.values()
             if o.status == "filled" and o.order_type == "stop_loss"
         ]
         assert len(filled_orders) == 1
@@ -251,7 +274,9 @@ class TestPaperExchange:
         await ex.place_market_order("ETH/USDT", "buy", 5.0)
 
         # Place stops on both
-        btc_stop = await ex.place_stop_loss("BTC/USDT", "sell", 0.5, stop_price=49_000.0)
+        btc_stop = await ex.place_stop_loss(
+            "BTC/USDT", "sell", 0.5, stop_price=49_000.0
+        )
         eth_stop = await ex.place_stop_loss("ETH/USDT", "sell", 5.0, stop_price=2_800.0)
 
         # BTC drops first — BTC stop fills, ETH stop stays open
@@ -287,7 +312,9 @@ class TestPaperExchange:
         assert order["status"] == "filled"
 
         # Confirm exactly one fill record exists
-        filled = [o for o in ex._orders.values() if o.id == order_id and o.status == "filled"]
+        filled = [
+            o for o in ex._orders.values() if o.id == order_id and o.status == "filled"
+        ]
         assert len(filled) == 1
 
     @pytest.mark.asyncio
@@ -314,7 +341,9 @@ class TestPaperExchange:
         order = await ex.get_order(order_id, "BTC/USDT")
         assert order["status"] == "filled"
         # Only one fill despite concurrent updates
-        filled = [o for o in ex._orders.values() if o.id == order_id and o.status == "filled"]
+        filled = [
+            o for o in ex._orders.values() if o.id == order_id and o.status == "filled"
+        ]
         assert len(filled) == 1
 
     @pytest.mark.asyncio
@@ -349,7 +378,9 @@ class TestPaperExchange:
         # Place a sell stop BELOW the burst range (below 50_000).
         # Sell stop triggers when price drops TO or BELOW stop_price.
         # Burst ended at ~51_900, so 49_500 is safely below market — stop stays open.
-        sell_stop = await ex.place_stop_loss("BTC/USDT", "sell", 0.1, stop_price=49_500.0)
+        sell_stop = await ex.place_stop_loss(
+            "BTC/USDT", "sell", 0.1, stop_price=49_500.0
+        )
         await ex._update_price("BTC/USDT", 50_500.0)  # still above 49_500
         order = await ex.get_order(sell_stop["id"], "BTC/USDT")
         assert order["status"] == "open"
@@ -361,6 +392,7 @@ class TestPaperExchange:
 
 
 # ── Portfolio Tracker Tests ────────────────────────────────────────────────────
+
 
 class TestPortfolioTracker:
     @pytest.mark.asyncio
@@ -440,10 +472,18 @@ class TestPortfolioTracker:
         tracker = PortfolioTracker(redis_client=None, initial_capital=10_000.0)
         await tracker.initialize()
 
-        await tracker.record_trade_closed(pnl=500.0, trade_id=1)   # equity=10500, peak=10500, mdd=0%
-        await tracker.record_trade_closed(pnl=-500.0, trade_id=2)  # equity=10000, mdd=(10500-10000)/10500=4.76%
-        await tracker.record_trade_closed(pnl=-500.0, trade_id=3)  # equity=9500, mdd=(10500-9500)/10500=9.52% ← peak here
-        await tracker.record_trade_closed(pnl=1000.0, trade_id=4)  # equity=10500, mdd stays 9.52%
+        await tracker.record_trade_closed(
+            pnl=500.0, trade_id=1
+        )  # equity=10500, peak=10500, mdd=0%
+        await tracker.record_trade_closed(
+            pnl=-500.0, trade_id=2
+        )  # equity=10000, mdd=(10500-10000)/10500=4.76%
+        await tracker.record_trade_closed(
+            pnl=-500.0, trade_id=3
+        )  # equity=9500, mdd=(10500-9500)/10500=9.52% ← peak here
+        await tracker.record_trade_closed(
+            pnl=1000.0, trade_id=4
+        )  # equity=10500, mdd stays 9.52%
 
         m = await tracker.get_metrics()
         # Max peak=10500, trough=9500 → (10500-9500)/10500 = 9.52%
@@ -476,6 +516,7 @@ class TestPortfolioTracker:
 
 
 # ── Orchestrator Tests ─────────────────────────────────────────────────────────
+
 
 class TestPaperTradingOrchestrator:
     @pytest.mark.asyncio

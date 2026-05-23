@@ -11,7 +11,6 @@ Detects and rejects parameter sets that are likely curve-fitted:
 
 from __future__ import annotations
 
-import math
 import uuid
 from dataclasses import dataclass
 from typing import Optional
@@ -24,9 +23,9 @@ class StabilityReport:
     run_id: str
     is_stable: bool
     is_stable_reason: str = ""
-    param_sensitivity_score: float = 0.0   # 0=stable, 1=unstable
-    is_oos_ratio: float = 0.0              # is_sharpe / oos_sharpe — cap at 2.0
-    walk_forward_stability: float = 0.0    # fraction of OOS windows with positive returns
+    param_sensitivity_score: float = 0.0  # 0=stable, 1=unstable
+    is_oos_ratio: float = 0.0  # is_sharpe / oos_sharpe — cap at 2.0
+    walk_forward_stability: float = 0.0  # fraction of OOS windows with positive returns
     n_oos_windows: int = 0
     n_oos_positive: int = 0
     reject_reason: Optional[str] = None
@@ -60,7 +59,7 @@ class AntiOverfitEngine:
 
     def evaluate(
         self,
-        is_stats,         # PerformanceStats for in-sample run
+        is_stats,  # PerformanceStats for in-sample run
         oos_stats_list,  # list[PerformanceStats] for each OOS window
         param_perturbations: list[dict],  # list of stats from perturbed param runs
     ) -> StabilityReport:
@@ -94,21 +93,33 @@ class AntiOverfitEngine:
         # Rule: too few OOS windows positive
         if valid_oos > 0 and wf_stability < self._min_oos_positive_rate:
             is_stable = False
-            reject_reason = f"wf_stability={wf_stability:.2%} < {self._min_oos_positive_rate:.0%}"
+            reject_reason = (
+                f"wf_stability={wf_stability:.2%} < {self._min_oos_positive_rate:.0%}"
+            )
 
         # Rule: OOS Sharpe deeply negative despite good IS
         if valid_oos > 0 and is_sharpe > 1.0:
-            avg_oos_sharpe = np.mean([getattr(o, "sharpe_ratio", 0) for o in oos_stats_list if getattr(o, "n_trades", 0) >= self._min_oos_trades])
+            avg_oos_sharpe = np.mean(
+                [
+                    getattr(o, "sharpe_ratio", 0)
+                    for o in oos_stats_list
+                    if getattr(o, "n_trades", 0) >= self._min_oos_trades
+                ]
+            )
             if avg_oos_sharpe < self._min_oos_sharpe:
                 is_stable = False
-                reject_reason = f"avg_oos_sharpe={avg_oos_sharpe:.2f} < {self._min_oos_sharpe}"
+                reject_reason = (
+                    f"avg_oos_sharpe={avg_oos_sharpe:.2f} < {self._min_oos_sharpe}"
+                )
 
         # ── 2. Parameter sensitivity ─────────────────────────────────────────────
         sens_score = self._compute_param_sensitivity(param_perturbations, is_stats)
 
         if sens_score > self._sensitivity_threshold:
             is_stable = False
-            reject_reason = f"param_sensitivity={sens_score:.3f} > {self._sensitivity_threshold}"
+            reject_reason = (
+                f"param_sensitivity={sens_score:.3f} > {self._sensitivity_threshold}"
+            )
 
         # ── Determine confidence ───────────────────────────────────────────────────
         if is_stable:
@@ -164,9 +175,10 @@ class AntiOverfitEngine:
 
 # ── Walk-Forward Analysis ───────────────────────────────────────────────────────
 
+
 @dataclass
 class WalkForwardResult:
-    windows: list[dict]   # [{'is_stats', 'oos_stats', 'return_diff', 'sharpe_diff'}]
+    windows: list[dict]  # [{'is_stats', 'oos_stats', 'return_diff', 'sharpe_diff'}]
     avg_is_return: float
     avg_oos_return: float
     avg_sharpe_diff: float
@@ -201,7 +213,13 @@ def walk_forward_analysis(
     while pos + train_size + test_size <= n:
         # Note: actual train/test split requires separate engine — this returns
         # placeholder structure; real impl uses ResearchEnvironment internally
-        windows.append({"start": pos, "is_end": pos + train_size, "oos_end": pos + train_size + test_size})
+        windows.append(
+            {
+                "start": pos,
+                "is_end": pos + train_size,
+                "oos_end": pos + train_size + test_size,
+            }
+        )
         pos += step
 
     return WalkForwardResult(
@@ -215,7 +233,10 @@ def walk_forward_analysis(
 
 # ── Bootstrap Stability ─────────────────────────────────────────────────────────
 
-def bootstrap_stability(pnls: list[float], n_bootstrap: int = 200, threshold: float = 0.05) -> float:
+
+def bootstrap_stability(
+    pnls: list[float], n_bootstrap: int = 200, threshold: float = 0.05
+) -> float:
     """
     Bootstrap resample returns and check what fraction of bootstrap
     samples still produce positive total return.

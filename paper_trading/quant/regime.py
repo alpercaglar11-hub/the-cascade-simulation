@@ -13,14 +13,14 @@ Tracks strategy performance broken down by detected regime.
 from __future__ import annotations
 
 import numpy as np
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from collections import defaultdict
 from typing import Optional
 
 from paper_trading.quant.stats import TradeRecord
 
-
 # ── Regime Types ────────────────────────────────────────────────────────────────
+
 
 class RegimeType:
     TREND = "TREND"
@@ -36,10 +36,11 @@ class RegimeSnapshot:
     start_bar: int
     end_bar: int
     avg_volatility: float
-    directional_score: float   # +1 = strong up, -1 = strong down
+    directional_score: float  # +1 = strong up, -1 = strong down
 
 
 # ── Regime Detector ──────────────────────────────────────────────────────────────
+
 
 class RegimeDetector:
     """
@@ -58,7 +59,7 @@ class RegimeDetector:
         vol_lookback: int = 20,
         adx_period: int = 14,
         bb_period: int = 20,
-        vol_threshold: float = 2.0,    # volume multipler for PANIC
+        vol_threshold: float = 2.0,  # volume multipler for PANIC
         vol_ma_period: int = 20,
     ):
         self._lookback = lookback
@@ -113,7 +114,9 @@ class RegimeDetector:
         # ── Decision tree ───────────────────────────────────────────────────────
         # PANIC: extreme volume + sharp drop (checked first — overrides everything)
         if vol_ratio > self._vol_threshold and len(closes) >= 2:
-            price_change = (closes[-1] - closes[-self._vol_lookback]) / closes[-self._vol_lookback]
+            price_change = (closes[-1] - closes[-self._vol_lookback]) / closes[
+                -self._vol_lookback
+            ]
             if price_change < -0.02:
                 return RegimeType.PANIC
 
@@ -152,7 +155,9 @@ class RegimeDetector:
 
     # ── Feature computations ───────────────────────────────────────────────────
 
-    def _compute_adx(self, highs: np.ndarray, lows: np.ndarray, closes: np.ndarray) -> float:
+    def _compute_adx(
+        self, highs: np.ndarray, lows: np.ndarray, closes: np.ndarray
+    ) -> float:
         """Average Directional Index — simplified."""
         period = min(self._adx_period, len(closes) - 1)
         if period < 3:
@@ -203,7 +208,7 @@ class RegimeDetector:
             return 0.5
 
         # Use log-returns std as volatility proxy over the lookback window
-        recent_closes = closes[-self._vol_lookback:]
+        recent_closes = closes[-self._vol_lookback :]
         returns = np.diff(np.log(recent_closes + 1e-10))
         current_vol = float(np.std(returns))
 
@@ -212,7 +217,7 @@ class RegimeDetector:
         vol_history = []
         step = self._vol_lookback // 2
         for i in range(self._vol_lookback, n, step):
-            window = closes[i - self._vol_lookback:i]
+            window = closes[i - self._vol_lookback : i]
             if len(window) < self._vol_lookback - 1:
                 continue
             rets = np.diff(np.log(window + 1e-10))
@@ -247,6 +252,7 @@ class RegimeDetector:
 
 # ── Regime Performance Tracker ─────────────────────────────────────────────────
 
+
 class RegimePerformanceTracker:
     """
     Collects per-regime performance data as a backtest runs.
@@ -280,9 +286,11 @@ class RegimePerformanceTracker:
                 "win_rate": round(len(wins) / n, 4),
                 "total_pnl": round(total_pnl, 2),
                 "avg_pnl": round(total_pnl / n, 4),
-                "profit_factor": round(
-                    sum(t.pnl for t in wins) / abs(sum(t.pnl for t in losses))
-                ) if losses else float("inf"),
+                "profit_factor": (
+                    round(sum(t.pnl for t in wins) / abs(sum(t.pnl for t in losses)))
+                    if losses
+                    else float("inf")
+                ),
                 "best_trade": round(max(t.pnl for t in trades), 4),
                 "worst_trade": round(min(t.pnl for t in trades), 4),
             }

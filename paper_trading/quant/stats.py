@@ -11,33 +11,33 @@ Provides:
 from __future__ import annotations
 
 import math
-import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
 
 import numpy as np
 
-
 # ── Trade Record ───────────────────────────────────────────────────────────────
+
 
 @dataclass
 class TradeRecord:
     """A single closed trade for statistical analysis."""
+
     id: str
     entry_time: datetime
     exit_time: datetime
-    side: str               # "long" or "short"
+    side: str  # "long" or "short"
     entry_price: float
     exit_price: float
     size: float
-    pnl: float              # net pnl after fees
-    pnl_pct: float           # return as decimal
-    duration_ticks: int      # number of bars held
+    pnl: float  # net pnl after fees
+    pnl_pct: float  # return as decimal
+    duration_ticks: int  # number of bars held
     regime: str = "UNKNOWN"
 
 
 # ── Equity Curve ───────────────────────────────────────────────────────────────
+
 
 @dataclass
 class EquityCurve:
@@ -45,10 +45,11 @@ class EquityCurve:
     Time series of portfolio values + drawdown for a backtest run.
     Used by ResearchEnvironment to compute all statistics.
     """
+
     timestamps: list[datetime] = field(default_factory=list)
     equity: list[float] = field(default_factory=list)
     drawdown_pct: list[float] = field(default_factory=list)
-    returns: list[float] = field(default_factory=list)   # period returns
+    returns: list[float] = field(default_factory=list)  # period returns
 
     @classmethod
     def from_trades(
@@ -108,9 +109,11 @@ class EquityCurve:
 
 # ── Performance Statistics ─────────────────────────────────────────────────────
 
+
 @dataclass
 class PerformanceStats:
     """All computed statistics for a strategy run."""
+
     run_id: str = ""
     strategy_name: str = ""
     n_trades: int = 0
@@ -124,7 +127,7 @@ class PerformanceStats:
     sharpe_ratio: float = 0.0
     sortino_ratio: float = 0.0
     calmar_ratio: float = 0.0
-    max_drawdown: float = 0.0      # absolute
+    max_drawdown: float = 0.0  # absolute
     max_drawdown_pct: float = 0.0  # as decimal
     max_drawdown_duration_bars: int = 0
     annualized_return: float = 0.0
@@ -145,7 +148,9 @@ class PerformanceStats:
 class StatsCalculator:
     """Computes performance statistics from equity curve + trade list."""
 
-    def __init__(self, annualization_factor: int = 365 * 24):  # ticks per year (hourly data)
+    def __init__(
+        self, annualization_factor: int = 365 * 24
+    ):  # ticks per year (hourly data)
         self._annualization = annualization_factor
 
     def compute(
@@ -173,7 +178,9 @@ class StatsCalculator:
         win_rate = len(wins) / n
         avg_win = np.mean([t.pnl for t in wins]) if wins else 0.0
         avg_loss = np.mean([t.pnl for t in losses]) if losses else 0.0
-        expectancy = (win_rate * avg_win) - ((1 - win_rate) * abs(avg_loss)) if n > 0 else 0.0
+        expectancy = (
+            (win_rate * avg_win) - ((1 - win_rate) * abs(avg_loss)) if n > 0 else 0.0
+        )
         total_wins = sum(t.pnl for t in wins) if wins else 0.0
         total_losses = abs(sum(t.pnl for t in losses)) if losses else 0.0
         profit_factor = total_wins / total_losses if total_losses > 0 else float("inf")
@@ -189,8 +196,16 @@ class StatsCalculator:
             neg_rets = valid_rets[valid_rets < 0]
             downside_std = np.std(neg_rets, ddof=1) if len(neg_rets) > 1 else std_ret
 
-            sharpe = (mean_ret / std_ret) * math.sqrt(self._annualization) if std_ret > 0 else 0.0
-            sortino = (mean_ret / downside_std) * math.sqrt(self._annualization) if downside_std > 0 else 0.0
+            sharpe = (
+                (mean_ret / std_ret) * math.sqrt(self._annualization)
+                if std_ret > 0
+                else 0.0
+            )
+            sortino = (
+                (mean_ret / downside_std) * math.sqrt(self._annualization)
+                if downside_std > 0
+                else 0.0
+            )
 
         # ── Drawdown ─────────────────────────────────────────────────────────────
         max_dd = np.max(dd_pct)
@@ -205,8 +220,10 @@ class StatsCalculator:
         years = n_periods / self._annualization if self._annualization > 0 else 1
         # Clamp total_return to prevent overflow in CAGR calculation
         total_return_clamped = max(total_return, -0.9999)
-        with np.errstate(over='ignore'):
-            ann_return = (1 + total_return_clamped) ** (1 / years) - 1 if years > 0 else 0.0
+        with np.errstate(over="ignore"):
+            ann_return = (
+                (1 + total_return_clamped) ** (1 / years) - 1 if years > 0 else 0.0
+            )
         ann_vol = std_ret * math.sqrt(self._annualization) if std_ret > 0 else 0.0
         calmar = ann_return / max_dd if max_dd > 1e-10 else 0.0
 
@@ -226,7 +243,9 @@ class StatsCalculator:
             avg_win=round(avg_win, 4),
             avg_loss=round(avg_loss, 4),
             expectancy=round(expectancy, 4),
-            profit_factor=round(profit_factor, 4) if profit_factor != float("inf") else 999.0,
+            profit_factor=(
+                round(profit_factor, 4) if profit_factor != float("inf") else 999.0
+            ),
             sharpe_ratio=round(sharpe, 3),
             sortino_ratio=round(sortino, 3),
             calmar_ratio=round(calmar, 3),
@@ -240,7 +259,9 @@ class StatsCalculator:
             best_trade=round(max(t.pnl for t in trades), 4) if trades else 0.0,
             worst_trade=round(min(t.pnl for t in trades), 4) if trades else 0.0,
             avg_trade_pnl=round(total_pnl / n, 4) if n > 0 else 0.0,
-            avg_trade_duration_bars=round(np.mean([t.duration_ticks for t in trades]), 2) if trades else 0.0,
+            avg_trade_duration_bars=(
+                round(np.mean([t.duration_ticks for t in trades]), 2) if trades else 0.0
+            ),
             alpha_decay_slope=round(alpha_decay_slope, 6),
             regime_stats=regime_stats,
         )
@@ -279,8 +300,8 @@ class StatsCalculator:
             windows = len(returns) - lookback
             alphas = []
             for i in range(windows):
-                old = returns[i:i + lookback]
-                new = returns[i + lookback:i + lookback * 2]
+                old = returns[i : i + lookback]
+                new = returns[i + lookback : i + lookback * 2]
                 if len(old) < 2 or len(new) < 2:
                     continue
                 old_mean = np.mean(old)
@@ -308,15 +329,20 @@ class StatsCalculator:
                 "n_trades": n,
                 "win_rate": round(len(wins) / n, 4) if n > 0 else 0,
                 "total_pnl": round(sum(t.pnl for t in regime_trades), 2),
-                "avg_pnl": round(sum(t.pnl for t in regime_trades) / n, 4) if n > 0 else 0,
-                "profit_factor": round(
-                    sum(t.pnl for t in wins) / abs(sum(t.pnl for t in losses))
-                ) if losses else float("inf"),
+                "avg_pnl": (
+                    round(sum(t.pnl for t in regime_trades) / n, 4) if n > 0 else 0
+                ),
+                "profit_factor": (
+                    round(sum(t.pnl for t in wins) / abs(sum(t.pnl for t in losses)))
+                    if losses
+                    else float("inf")
+                ),
             }
         return result
 
 
 # ── Monte Carlo Resampling ─────────────────────────────────────────────────────
+
 
 @dataclass
 class MonteCarloResult:
@@ -324,9 +350,9 @@ class MonteCarloResult:
     sharpe_scores: list[float]
     max_drawdowns: list[float]
     total_returns: list[float]
-    survival_rate: float   # fraction of sims with positive pnl
-    var_95: float          # value at risk 95%
-    cvar_95: float         # conditional VaR
+    survival_rate: float  # fraction of sims with positive pnl
+    var_95: float  # value at risk 95%
+    cvar_95: float  # conditional VaR
     confidence_interval_95: tuple[float, float]
 
 
@@ -340,7 +366,9 @@ class MonteCarloEngine:
         self._n = n_simulations
         self._rng = np.random.default_rng(random_seed)
 
-    def run(self, trades: list[TradeRecord], initial_capital: float) -> MonteCarloResult:
+    def run(
+        self, trades: list[TradeRecord], initial_capital: float
+    ) -> MonteCarloResult:
         if not trades:
             return MonteCarloResult(0, [], [], [], 0.0, 0.0, 0.0, (0.0, 0.0))
 
@@ -365,7 +393,9 @@ class MonteCarloEngine:
             # Annualized Sharpe from resampled returns
             ret_series = resampled
             if len(ret_series) > 1 and np.std(ret_series) > 1e-10:
-                sharpe = np.mean(ret_series) / np.std(ret_series, ddof=1) * math.sqrt(252)
+                sharpe = (
+                    np.mean(ret_series) / np.std(ret_series, ddof=1) * math.sqrt(252)
+                )
             else:
                 sharpe = 0.0
 

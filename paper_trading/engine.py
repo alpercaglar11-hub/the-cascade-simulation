@@ -20,7 +20,6 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Literal
 from dataclasses import dataclass, field
 from collections import deque
-from decimal import Decimal, ROUND_DOWN, ROUND_UP
 
 from paper_trading._logger import get_logger
 
@@ -28,8 +27,8 @@ log = get_logger(__name__)
 
 
 # ── Fee schedule ────────────────────────────────────────────────────────────────
-MAKER_FEE_BPS = 5    # 0.05% — maker rebate (negative)
-TAKER_FEE_BPS = 10   # 0.10% — taker fee
+MAKER_FEE_BPS = 5  # 0.05% — maker rebate (negative)
+TAKER_FEE_BPS = 10  # 0.10% — taker fee
 SLIPPAGE_BASE_BPS = 3  # 0.03% base slippage for market orders
 
 
@@ -39,11 +38,11 @@ class PaperOrder:
     symbol: str
     side: Literal["buy", "sell"]
     order_type: Literal["market", "limit", "stop_loss", "take_profit"]
-    quantity: float          # requested quantity
+    quantity: float  # requested quantity
     filled_quantity: float = 0.0
-    price: float = 0.0       # limit price (0 for market)
+    price: float = 0.0  # limit price (0 for market)
     stop_price: float = 0.0  # trigger price for stop orders
-    fill_price: float = 0.0   # average fill price
+    fill_price: float = 0.0  # average fill price
     status: Literal["open", "filled", "partial", "cancelled", "rejected"] = "open"
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -76,16 +75,20 @@ class SlippageModel:
     @staticmethod
     def compute(
         order_value: float,
-        adv: float,               # average daily volume in quote currency
-        volatility_pct: float,    # current volatility as percentage
+        adv: float,  # average daily volume in quote currency
+        volatility_pct: float,  # current volatility as percentage
         is_market: bool = True,
     ) -> float:
         if not is_market:
             return 0.0
 
         base = SLIPPAGE_BASE_BPS
-        vol_adj = min(volatility_pct / 1.0, 3.0) * 5  # cap at 15 bps volatility adjustment
-        size_ratio = min(order_value / max(adv * 0.01, 0.01), 1.0)  # 1% of ADV = max penalty
+        vol_adj = (
+            min(volatility_pct / 1.0, 3.0) * 5
+        )  # cap at 15 bps volatility adjustment
+        size_ratio = min(
+            order_value / max(adv * 0.01, 0.01), 1.0
+        )  # 1% of ADV = max penalty
         total = (base + vol_adj) * (1 + size_ratio)
         return round(total, 2)  # bps
 
@@ -134,23 +137,31 @@ class DowntimeSimulator:
         """
         if self._down_until and datetime.now(timezone.utc) < self._down_until:
             remaining = (self._down_until - datetime.now(timezone.utc)).total_seconds()
-            log.warning("paper_exchange_downtime_active", remaining_seconds=round(remaining, 1))
+            log.warning(
+                "paper_exchange_downtime_active", remaining_seconds=round(remaining, 1)
+            )
             await asyncio.sleep(min(remaining, 5))  # wait at most 5s per call
             if datetime.now(timezone.utc) < self._down_until:
-                raise PaperExchangeDownError("Exchange is down for scheduled maintenance")
+                raise PaperExchangeDownError(
+                    "Exchange is down for scheduled maintenance"
+                )
             self._down_until = None
             return
 
         # Maybe start a new downtime event
         if random.random() < self._prob:
             duration = random.expovariate(1.0 / self._mean_downtime)
-            self._down_until = datetime.now(timezone.utc) + timedelta(seconds=min(duration, 300))
+            self._down_until = datetime.now(timezone.utc) + timedelta(
+                seconds=min(duration, 300)
+            )
             log.warning(
                 "paper_exchange_downtime_scheduled",
                 duration_seconds=round(duration, 1),
                 until=self._down_until.isoformat(),
             )
-            raise PaperExchangeDownError(f"Exchange downtime simulated — back at {self._down_until.isoformat()}")
+            raise PaperExchangeDownError(
+                f"Exchange downtime simulated — back at {self._down_until.isoformat()}"
+            )
 
     def clear_downtime(self) -> None:
         self._down_until = None
@@ -189,6 +200,7 @@ class PartialFillSimulator:
 
 
 # ── Paper Exchange ───────────────────────────────────────────────────────────────
+
 
 class PaperExchange:
     """
@@ -323,7 +335,11 @@ class PaperExchange:
     # ── Market Orders ──────────────────────────────────────────────────────────
 
     async def place_market_order(
-        self, symbol: str, side: Literal["buy", "sell"], amount: float, idempotency_key: str = ""
+        self,
+        symbol: str,
+        side: Literal["buy", "sell"],
+        amount: float,
+        idempotency_key: str = "",
     ) -> dict:
         """
         Place a market order with simulated fill.
@@ -367,13 +383,17 @@ class PaperExchange:
             if side == "buy":
                 required = amount * fill_price * (1 + self._taker_fee_bps / 10_000)
                 if not await self._reserve_balance("USDT", required):
-                    raise PaperOrderRejectedError(f"Insufficient USDT balance: need {required:.2f}, have {self._balances.get('USDT', PaperBalance('USDT', 0)).free:.2f}")
+                    raise PaperOrderRejectedError(
+                        f"Insufficient USDT balance: need {required:.2f}, have {self._balances.get('USDT', PaperBalance('USDT', 0)).free:.2f}"
+                    )
             else:
                 if not await self._reserve_balance(base_asset, amount):
                     raise PaperOrderRejectedError(f"Insufficient {base_asset} balance")
 
             # Check for partial fill
-            if PartialFillSimulator.should_partial_fill(amount, self._top_of_book_depth):
+            if PartialFillSimulator.should_partial_fill(
+                amount, self._top_of_book_depth
+            ):
                 return await self._partial_fill_order(
                     symbol, side, amount, fill_price, slippage_bps, lat, idempotency_key
                 )
@@ -430,7 +450,11 @@ class PaperExchange:
                 tick_price = first_fill_price * (1 + worsen_bps / 10_000)
             else:
                 tick_price = first_fill_price * (1 - worsen_bps / 10_000)
-            asyncio.create_task(self._delayed_partial_fill(order_id, symbol, side, tick_qty, tick_price, i))
+            asyncio.create_task(
+                self._delayed_partial_fill(
+                    order_id, symbol, side, tick_qty, tick_price, i
+                )
+            )
 
         return first_result
 
@@ -451,18 +475,30 @@ class PaperExchange:
                 parent = self._orders.get(parent_order_id)
                 if parent:
                     parent.filled_quantity += quantity
-                    parent.fill_price = (parent.fill_price * (parent.filled_quantity - quantity) + fill_price * quantity) / parent.filled_quantity
+                    parent.fill_price = (
+                        parent.fill_price * (parent.filled_quantity - quantity)
+                        + fill_price * quantity
+                    ) / parent.filled_quantity
                     parent.updated_at = datetime.now(timezone.utc)
                     if parent.filled_quantity >= parent.quantity:
                         parent.status = "filled"
         except Exception as e:
-            log.error("partial_fill_tick_error", order_id=parent_order_id, tick=tick_index, error=str(e))
+            log.error(
+                "partial_fill_tick_error",
+                order_id=parent_order_id,
+                tick=tick_index,
+                error=str(e),
+            )
 
     # ── Limit Orders ─────────────────────────────────────────────────────────────
 
     async def place_limit_order(
-        self, symbol: str, side: Literal["buy", "sell"], amount: float, price: float,
-        idempotency_key: str = ""
+        self,
+        symbol: str,
+        side: Literal["buy", "sell"],
+        amount: float,
+        price: float,
+        idempotency_key: str = "",
     ) -> dict:
         """
         Place a limit order. Immediately fills if price condition is already met:
@@ -481,15 +517,25 @@ class PaperExchange:
                 # Buy limit at or above market - fill at current price (not limit price)
                 slippage_bps = 0.0  # limit order fills at market price
                 return await self._complete_fill(
-                    symbol=symbol, side=side, order_type="limit",
-                    quantity=amount, fill_price=current_price,
-                    slippage_bps=0.0, latency_ms=lat, idempotency_key=idempotency_key,
+                    symbol=symbol,
+                    side=side,
+                    order_type="limit",
+                    quantity=amount,
+                    fill_price=current_price,
+                    slippage_bps=0.0,
+                    latency_ms=lat,
+                    idempotency_key=idempotency_key,
                 )
             elif side == "sell" and price <= current_price:
                 return await self._complete_fill(
-                    symbol=symbol, side=side, order_type="limit",
-                    quantity=amount, fill_price=current_price,
-                    slippage_bps=0.0, latency_ms=lat, idempotency_key=idempotency_key,
+                    symbol=symbol,
+                    side=side,
+                    order_type="limit",
+                    quantity=amount,
+                    fill_price=current_price,
+                    slippage_bps=0.0,
+                    latency_ms=lat,
+                    idempotency_key=idempotency_key,
                 )
 
         # Place as open limit order
@@ -503,7 +549,9 @@ class PaperExchange:
         if side == "buy":
             required = amount * price * (1 + self._maker_fee_bps / 10_000)
             if not await self._reserve_balance(quote_asset, required):
-                raise PaperOrderRejectedError(f"Insufficient {quote_asset} for limit order")
+                raise PaperOrderRejectedError(
+                    f"Insufficient {quote_asset} for limit order"
+                )
 
         order = PaperOrder(
             id=order_id,
@@ -519,7 +567,14 @@ class PaperExchange:
             self._orders[order_id] = order
             self._open_limit_orders.append(order)
 
-        log.info("paper_limit_order_placed", order_id=order_id, symbol=symbol, side=side, price=price, amount=amount)
+        log.info(
+            "paper_limit_order_placed",
+            order_id=order_id,
+            symbol=symbol,
+            side=side,
+            price=price,
+            amount=amount,
+        )
         return self._parse_order(order)
 
     async def _check_and_trigger_orders(self, symbol: str) -> None:
@@ -588,7 +643,13 @@ class PaperExchange:
             if order.side == "sell":
                 bal = self._balances.get(base_asset)
                 if bal is None or bal.free < order.quantity - 1e-9:
-                    log.warning("skip_fill_insufficient_balance", symbol=order.symbol, side=order.side, free=bal.free if bal else 0, required=order.quantity)
+                    log.warning(
+                        "skip_fill_insufficient_balance",
+                        symbol=order.symbol,
+                        side=order.side,
+                        free=bal.free if bal else 0,
+                        required=order.quantity,
+                    )
                     continue
             await self._complete_fill(
                 symbol=order.symbol,
@@ -596,7 +657,11 @@ class PaperExchange:
                 order_type=order.order_type,
                 quantity=order.quantity,
                 fill_price=fill_price,
-                slippage_bps=SLIPPAGE_BASE_BPS if order.order_type in ("stop_loss", "take_profit") else 0.0,
+                slippage_bps=(
+                    SLIPPAGE_BASE_BPS
+                    if order.order_type in ("stop_loss", "take_profit")
+                    else 0.0
+                ),
                 latency_ms=0.0,
                 idempotency_key=order.id,
             )
@@ -604,7 +669,11 @@ class PaperExchange:
     # ── Stop Loss / Take Profit ─────────────────────────────────────────────────
 
     async def place_stop_loss(
-        self, symbol: str, side: Literal["buy", "sell"], amount: float, stop_price: float
+        self,
+        symbol: str,
+        side: Literal["buy", "sell"],
+        amount: float,
+        stop_price: float,
     ) -> dict:
         """Place a stop loss order. Fills immediately if stop price already crossed."""
         await self._check_downtime()
@@ -613,15 +682,25 @@ class PaperExchange:
         if current_price > 0:
             if side == "sell" and current_price <= stop_price:
                 return await self._complete_fill(
-                    symbol=symbol, side=side, order_type="stop_loss",
-                    quantity=amount, fill_price=stop_price,
-                    slippage_bps=SLIPPAGE_BASE_BPS, latency_ms=0.0, idempotency_key="",
+                    symbol=symbol,
+                    side=side,
+                    order_type="stop_loss",
+                    quantity=amount,
+                    fill_price=stop_price,
+                    slippage_bps=SLIPPAGE_BASE_BPS,
+                    latency_ms=0.0,
+                    idempotency_key="",
                 )
             elif side == "buy" and current_price >= stop_price:
                 return await self._complete_fill(
-                    symbol=symbol, side=side, order_type="stop_loss",
-                    quantity=amount, fill_price=stop_price,
-                    slippage_bps=SLIPPAGE_BASE_BPS, latency_ms=0.0, idempotency_key="",
+                    symbol=symbol,
+                    side=side,
+                    order_type="stop_loss",
+                    quantity=amount,
+                    fill_price=stop_price,
+                    slippage_bps=SLIPPAGE_BASE_BPS,
+                    latency_ms=0.0,
+                    idempotency_key="",
                 )
 
         order_id = f"paper_{uuid.uuid4().hex[:12]}"
@@ -641,7 +720,11 @@ class PaperExchange:
         return self._parse_order(order)
 
     async def place_take_profit(
-        self, symbol: str, side: Literal["buy", "sell"], amount: float, take_profit_price: float
+        self,
+        symbol: str,
+        side: Literal["buy", "sell"],
+        amount: float,
+        take_profit_price: float,
     ) -> dict:
         """Place a take profit order."""
         await self._check_downtime()
@@ -650,15 +733,25 @@ class PaperExchange:
         if current_price > 0:
             if side == "sell" and current_price >= take_profit_price:
                 return await self._complete_fill(
-                    symbol=symbol, side=side, order_type="take_profit",
-                    quantity=amount, fill_price=take_profit_price,
-                    slippage_bps=0.0, latency_ms=0.0, idempotency_key="",
+                    symbol=symbol,
+                    side=side,
+                    order_type="take_profit",
+                    quantity=amount,
+                    fill_price=take_profit_price,
+                    slippage_bps=0.0,
+                    latency_ms=0.0,
+                    idempotency_key="",
                 )
             elif side == "buy" and current_price <= take_profit_price:
                 return await self._complete_fill(
-                    symbol=symbol, side=side, order_type="take_profit",
-                    quantity=amount, fill_price=take_profit_price,
-                    slippage_bps=0.0, latency_ms=0.0, idempotency_key="",
+                    symbol=symbol,
+                    side=side,
+                    order_type="take_profit",
+                    quantity=amount,
+                    fill_price=take_profit_price,
+                    slippage_bps=0.0,
+                    latency_ms=0.0,
+                    idempotency_key="",
                 )
 
         order_id = f"paper_{uuid.uuid4().hex[:12]}"
@@ -689,7 +782,9 @@ class PaperExchange:
                 raise PaperOrderNotFoundError(f"Order {order_id} not found")
 
             if order.status not in ("open", "partial"):
-                raise PaperExchangeError(f"Cannot cancel order in status: {order.status}")
+                raise PaperExchangeError(
+                    f"Cannot cancel order in status: {order.status}"
+                )
 
             order.status = "cancelled"
             order.updated_at = datetime.now(timezone.utc)
@@ -734,10 +829,14 @@ class PaperExchange:
                 # Deduct quote currency (already reserved, now settle)
                 bal_quote = self._balances.get(quote_asset)
                 if bal_quote:
-                    bal_quote.locked = max(0.0, bal_quote.locked - order_value * (1 + fee_bps / 10_000))
+                    bal_quote.locked = max(
+                        0.0, bal_quote.locked - order_value * (1 + fee_bps / 10_000)
+                    )
                     bal_quote.free += quantity  # receive base asset
                     if base_asset not in self._balances:
-                        self._balances[base_asset] = PaperBalance(asset=base_asset, free=0.0)
+                        self._balances[base_asset] = PaperBalance(
+                            asset=base_asset, free=0.0
+                        )
                     self._balances[base_asset].free += quantity
             else:
                 # Deduct base asset from FREE balance (seller's holdings)
@@ -747,7 +846,9 @@ class PaperExchange:
                 # Receive quote currency
                 proceeds = order_value - fee
                 if quote_asset not in self._balances:
-                    self._balances[quote_asset] = PaperBalance(asset=quote_asset, free=0.0)
+                    self._balances[quote_asset] = PaperBalance(
+                        asset=quote_asset, free=0.0
+                    )
                 self._balances[quote_asset].free += proceeds
 
         order_id = idempotency_key or f"paper_{uuid.uuid4().hex[:12]}"
@@ -814,7 +915,9 @@ class PaperExchange:
             "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
         }
 
-    async def get_ohlcv(self, symbol: str, timeframe: str = "1m", limit: int = 100) -> list:
+    async def get_ohlcv(
+        self, symbol: str, timeframe: str = "1m", limit: int = 100
+    ) -> list:
         """Return simulated OHLCV data based on current price with random walk."""
         await self._simulate_latency()
         await self._check_downtime()
@@ -824,7 +927,12 @@ class PaperExchange:
 
         candles = []
         now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-        interval_ms = {"1m": 60_000, "5m": 300_000, "15m": 900_000, "1h": 3_600_000}.get(timeframe, 60_000)
+        interval_ms = {
+            "1m": 60_000,
+            "5m": 300_000,
+            "15m": 900_000,
+            "1h": 3_600_000,
+        }.get(timeframe, 60_000)
 
         for i in range(limit):
             t = now_ms - (limit - i - 1) * interval_ms
@@ -836,14 +944,16 @@ class PaperExchange:
             l = price_sim * random.uniform(0.995, 1.000)
             c = price_sim
             v = random.uniform(10, 100)
-            candles.append({
-                "timestamp": t,
-                "open": round(o, 8),
-                "high": round(h, 8),
-                "low": round(l, 8),
-                "close": round(c, 8),
-                "volume": round(v, 4),
-            })
+            candles.append(
+                {
+                    "timestamp": t,
+                    "open": round(o, 8),
+                    "high": round(h, 8),
+                    "low": round(l, 8),
+                    "close": round(c, 8),
+                    "volume": round(v, 4),
+                }
+            )
 
         return candles
 
@@ -889,7 +999,11 @@ class PaperExchange:
 
     def get_all_balances(self) -> dict:
         return {
-            asset: {"free": bal.free, "locked": bal.locked, "total": bal.free + bal.locked}
+            asset: {
+                "free": bal.free,
+                "locked": bal.locked,
+                "total": bal.free + bal.locked,
+            }
             for asset, bal in self._balances.items()
         }
 
@@ -914,16 +1028,18 @@ class PaperExchange:
 
 # ── Exceptions ─────────────────────────────────────────────────────────────────
 
+
 class PaperExchangeError(Exception):
     pass
 
+
 class PaperExchangeDownError(PaperExchangeError):
     """Exchange is in a simulated downtime period."""
-    pass
+
 
 class PaperOrderRejectedError(PaperExchangeError):
     """Order rejected due to insufficient balance or other risk limit."""
-    pass
+
 
 class PaperOrderNotFoundError(PaperExchangeError):
     pass

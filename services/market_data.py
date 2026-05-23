@@ -41,7 +41,9 @@ class MarketDataEngine:
         self._max_reconnect_delay = 60
 
         # OHLCV buffers per timeframe — all access via self._lock
-        self._candles: dict[str, deque] = {tf: deque(maxlen=500) for tf in self.TIMEFRAMES}
+        self._candles: dict[str, deque] = {
+            tf: deque(maxlen=500) for tf in self.TIMEFRAMES
+        }
         self._lock = asyncio.Lock()
 
         # Subscriber callbacks
@@ -92,7 +94,9 @@ class MarketDataEngine:
             await asyncio.sleep(5)
             async with self._lock:
                 if self._last_update_received:
-                    age = (datetime.now(timezone.utc) - self._last_update_received).total_seconds()
+                    age = (
+                        datetime.now(timezone.utc) - self._last_update_received
+                    ).total_seconds()
                     was_stale = self._is_stale
                     self._is_stale = age > self.MAX_STALE_SECONDS
                     if self._is_stale and not was_stale:
@@ -101,7 +105,10 @@ class MarketDataEngine:
                         if self._redis_client:
                             await self._redis_client.publish(
                                 "alerts:market_data_stale",
-                                json.dumps({"symbol": self._symbol, "age_seconds": age}, default=str),
+                                json.dumps(
+                                    {"symbol": self._symbol, "age_seconds": age},
+                                    default=str,
+                                ),
                             )
 
     async def _stream_loop(self) -> None:
@@ -111,7 +118,9 @@ class MarketDataEngine:
                 streams = [f"{self._symbol.replace('/', '').lower()}@kline_1m"]
                 ws_url = f"{self.CANDLES_URL}/{streams[0]}"
 
-                async with websockets.connect(ws_url, ping_interval=20, ping_timeout=10) as ws:
+                async with websockets.connect(
+                    ws_url, ping_interval=20, ping_timeout=10
+                ) as ws:
                     self._ws = ws
                     self._reconnect_delay = 1  # reset backoff on successful connect
                     log.info("websocket_connected", url=ws_url)
@@ -128,7 +137,9 @@ class MarketDataEngine:
                     reconnecting_in=self._reconnect_delay,
                 )
                 await asyncio.sleep(self._reconnect_delay)
-                self._reconnect_delay = min(self._reconnect_delay * 2, self._max_reconnect_delay)
+                self._reconnect_delay = min(
+                    self._reconnect_delay * 2, self._max_reconnect_delay
+                )
 
     async def _handle_message(self, raw: str) -> None:
         """Parse and process a WebSocket kline message. All writes go through self._lock."""
@@ -140,7 +151,9 @@ class MarketDataEngine:
 
             tf = kline.get("i")
             candle = {
-                "timestamp": datetime.fromtimestamp(kline.get("t", 0) / 1000, tz=timezone.utc),
+                "timestamp": datetime.fromtimestamp(
+                    kline.get("t", 0) / 1000, tz=timezone.utc
+                ),
                 "open": float(kline.get("o", 0)),
                 "high": float(kline.get("h", 0)),
                 "low": float(kline.get("l", 0)),
@@ -194,15 +207,19 @@ class MarketDataEngine:
                 async with self._lock:
                     self._candles[tf].clear()
                     for c in candles:
-                        self._candles[tf].append({
-                            "timestamp": datetime.fromtimestamp(c["timestamp"] / 1000, tz=timezone.utc),
-                            "open": c["open"],
-                            "high": c["high"],
-                            "low": c["low"],
-                            "close": c["close"],
-                            "volume": c["volume"],
-                            "closed": True,
-                        })
+                        self._candles[tf].append(
+                            {
+                                "timestamp": datetime.fromtimestamp(
+                                    c["timestamp"] / 1000, tz=timezone.utc
+                                ),
+                                "open": c["open"],
+                                "high": c["high"],
+                                "low": c["low"],
+                                "close": c["close"],
+                                "volume": c["volume"],
+                                "closed": True,
+                            }
+                        )
                 await asyncio.sleep(1)
             except Exception as e:
                 log.error("historical_fetch_error", timeframe=tf, error=str(e))
@@ -255,25 +272,45 @@ class MarketDataEngine:
 
             try:
                 indicators = {
-                    "rsi_14": float(ta.momentum.RSIIndicator(closes, window=14).rsi().iloc[-1]),
-                    "ema_9": float(ta.trend.EMAIndicator(closes, window=9).ema_indicator().iloc[-1]),
-                    "ema_21": float(ta.trend.EMAIndicator(closes, window=21).ema_indicator().iloc[-1]),
-                    "atr_14": float(ta.volatility.AverageTrueRange(
-                        pd.Series([c["high"] for c in candles_1m]),
-                        pd.Series([c["low"] for c in candles_1m]),
-                        closes,
-                        window=14,
-                    ).atr().iloc[-1]),
+                    "rsi_14": float(
+                        ta.momentum.RSIIndicator(closes, window=14).rsi().iloc[-1]
+                    ),
+                    "ema_9": float(
+                        ta.trend.EMAIndicator(closes, window=9).ema_indicator().iloc[-1]
+                    ),
+                    "ema_21": float(
+                        ta.trend.EMAIndicator(closes, window=21)
+                        .ema_indicator()
+                        .iloc[-1]
+                    ),
+                    "atr_14": float(
+                        ta.volatility.AverageTrueRange(
+                            pd.Series([c["high"] for c in candles_1m]),
+                            pd.Series([c["low"] for c in candles_1m]),
+                            closes,
+                            window=14,
+                        )
+                        .atr()
+                        .iloc[-1]
+                    ),
                     "macd": float(ta.trend.MACD(closes).macd().iloc[-1]),
                     "macd_signal": float(ta.trend.MACD(closes).macd_signal().iloc[-1]),
                     "volume_sma_20": float(volumes.rolling(20).mean().iloc[-1]),
-                    "bb_upper": float(ta.volatility.BollingerBands(closes).bollinger_hband().iloc[-1]),
-                    "bb_lower": float(ta.volatility.BollingerBands(closes).bollinger_lband().iloc[-1]),
-                    "adx": float(ta.trend.ADXIndicator(
-                        pd.Series([c["high"] for c in candles_1m]),
-                        pd.Series([c["low"] for c in candles_1m]),
-                        closes,
-                    ).adx().iloc[-1]),
+                    "bb_upper": float(
+                        ta.volatility.BollingerBands(closes).bollinger_hband().iloc[-1]
+                    ),
+                    "bb_lower": float(
+                        ta.volatility.BollingerBands(closes).bollinger_lband().iloc[-1]
+                    ),
+                    "adx": float(
+                        ta.trend.ADXIndicator(
+                            pd.Series([c["high"] for c in candles_1m]),
+                            pd.Series([c["low"] for c in candles_1m]),
+                            closes,
+                        )
+                        .adx()
+                        .iloc[-1]
+                    ),
                 }
             except Exception as e:
                 log.warning("indicator_calculation_error", error=str(e))
@@ -282,7 +319,9 @@ class MarketDataEngine:
         # Data age
         data_age_seconds = 0.0
         if self._last_update_received:
-            data_age_seconds = (datetime.now(timezone.utc) - self._last_update_received).total_seconds()
+            data_age_seconds = (
+                datetime.now(timezone.utc) - self._last_update_received
+            ).total_seconds()
 
         return {
             "symbol": self._symbol,
@@ -297,7 +336,9 @@ class MarketDataEngine:
             "indicators": indicators,
         }
 
-    async def get_latest_closes(self, timeframe: str = "1m", count: int = 100) -> list[float]:
+    async def get_latest_closes(
+        self, timeframe: str = "1m", count: int = 100
+    ) -> list[float]:
         async with self._lock:
             buf = list(self._candles.get(timeframe, []))
         return [c["close"] for c in buf[-count:]]

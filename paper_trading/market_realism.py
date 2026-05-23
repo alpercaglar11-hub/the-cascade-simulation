@@ -41,12 +41,13 @@ SLIPPAGE_BASE_BPS = 3  # re-exported from engine for use in this module
 
 # ── Volatility Regimes ──────────────────────────────────────────────────────────
 
+
 class VolatilityRegime(Enum):
-    LOW = auto()        # Tight spreads, small moves, predictable
-    TREND = auto()      # Directional expansion, widening spreads
-    CASCADE = auto()    # Liquidation cascade — falling prices trigger more liquidations
-    CRASH = auto()      # Flash crash — gap down, then slow recovery
-    SPIKE = auto()      # News-driven sudden jump, then settle
+    LOW = auto()  # Tight spreads, small moves, predictable
+    TREND = auto()  # Directional expansion, widening spreads
+    CASCADE = auto()  # Liquidation cascade — falling prices trigger more liquidations
+    CRASH = auto()  # Flash crash — gap down, then slow recovery
+    SPIKE = auto()  # News-driven sudden jump, then settle
 
 
 @dataclass
@@ -62,15 +63,29 @@ class VolatilityRegimeConfig:
 
 
 REGIME_DEFAULTS: dict[VolatilityRegime, VolatilityRegimeConfig] = {
-    VolatilityRegime.LOW:      VolatilityRegimeConfig(VolatilityRegime.LOW,      price_drift_bps=0,    spread_mult=0.6,  liquidity_mult=1.5),
-    VolatilityRegime.TREND:    VolatilityRegimeConfig(VolatilityRegime.TREND,    price_drift_bps=15,   spread_mult=1.5,  liquidity_mult=0.9),
-    VolatilityRegime.CASCADE:  VolatilityRegimeConfig(VolatilityRegime.CASCADE,  price_drift_bps=-25,  spread_mult=2.5,  liquidity_mult=0.4),
-    VolatilityRegime.CRASH:    VolatilityRegimeConfig(VolatilityRegime.CRASH,    price_drift_bps=-50,  spread_mult=4.0,  liquidity_mult=0.2),
-    VolatilityRegime.SPIKE:    VolatilityRegimeConfig(VolatilityRegime.SPIKE,    price_drift_bps=30,   spread_mult=3.0,  liquidity_mult=0.5),
+    VolatilityRegime.LOW: VolatilityRegimeConfig(
+        VolatilityRegime.LOW, price_drift_bps=0, spread_mult=0.6, liquidity_mult=1.5
+    ),
+    VolatilityRegime.TREND: VolatilityRegimeConfig(
+        VolatilityRegime.TREND, price_drift_bps=15, spread_mult=1.5, liquidity_mult=0.9
+    ),
+    VolatilityRegime.CASCADE: VolatilityRegimeConfig(
+        VolatilityRegime.CASCADE,
+        price_drift_bps=-25,
+        spread_mult=2.5,
+        liquidity_mult=0.4,
+    ),
+    VolatilityRegime.CRASH: VolatilityRegimeConfig(
+        VolatilityRegime.CRASH, price_drift_bps=-50, spread_mult=4.0, liquidity_mult=0.2
+    ),
+    VolatilityRegime.SPIKE: VolatilityRegimeConfig(
+        VolatilityRegime.SPIKE, price_drift_bps=30, spread_mult=3.0, liquidity_mult=0.5
+    ),
 }
 
 
 # ── Order Book ─────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class BookLevel:
@@ -107,15 +122,23 @@ class OrderBookSimulator:
         self._refresh_book()
 
     def _refresh_book(self) -> None:
-        spread = self._mid_price * (self._base_spread_bps * self._regime_spread_mult / 10_000)
+        spread = self._mid_price * (
+            self._base_spread_bps * self._regime_spread_mult / 10_000
+        )
         mid = self._mid_price
         self._bid_levels = []
         self._ask_levels = []
         for i in range(1, self._num_levels + 1):
             offset = spread / 2 + (i - 1) * self._tick_size
-            qty = self._base_level_qty * self._regime_liquidity_mult * math.exp(-i * 0.08)
-            self._bid_levels.append(BookLevel(price=round(mid - offset, 2), quantity=max(0.01, qty)))
-            self._ask_levels.append(BookLevel(price=round(mid + offset, 2), quantity=max(0.01, qty)))
+            qty = (
+                self._base_level_qty * self._regime_liquidity_mult * math.exp(-i * 0.08)
+            )
+            self._bid_levels.append(
+                BookLevel(price=round(mid - offset, 2), quantity=max(0.01, qty))
+            )
+            self._ask_levels.append(
+                BookLevel(price=round(mid + offset, 2), quantity=max(0.01, qty))
+            )
 
     def update_mid_price(self, new_mid: float) -> None:
         self._mid_price = new_mid
@@ -129,12 +152,20 @@ class OrderBookSimulator:
     def get_spread_bps(self) -> float:
         if not self._ask_levels or not self._bid_levels:
             return 0.0
-        return (self._ask_levels[0].price - self._bid_levels[0].price) / self._mid_price * 10_000
+        return (
+            (self._ask_levels[0].price - self._bid_levels[0].price)
+            / self._mid_price
+            * 10_000
+        )
 
     def get_top_of_book(self) -> tuple[float, float, float]:
         bid = self._bid_levels[0].price if self._bid_levels else self._mid_price * 0.999
         ask = self._ask_levels[0].price if self._ask_levels else self._mid_price * 1.001
-        depth = (self._bid_levels[0].quantity + self._ask_levels[0].quantity) if self._bid_levels else 0.0
+        depth = (
+            (self._bid_levels[0].quantity + self._ask_levels[0].quantity)
+            if self._bid_levels
+            else 0.0
+        )
         return bid, ask, depth
 
     def compute_fill_price(
@@ -172,7 +203,11 @@ class OrderBookSimulator:
 
         if remaining > 0:
             last = levels[-1].price
-            worst = last * (1 + regime_cfg.spread_mult * 2 / 10_000) if side == "buy" else last * (1 - regime_cfg.spread_mult * 2 / 10_000)
+            worst = (
+                last * (1 + regime_cfg.spread_mult * 2 / 10_000)
+                if side == "buy"
+                else last * (1 - regime_cfg.spread_mult * 2 / 10_000)
+            )
             total_cost += worst * remaining
             fills.append((worst, remaining))
 
@@ -182,6 +217,7 @@ class OrderBookSimulator:
 
 
 # ── Execution Metrics ───────────────────────────────────────────────────────────
+
 
 @dataclass
 class ExecutionRecord:
@@ -232,16 +268,23 @@ class ExecutionMetrics:
             and actual_fill < expected_fill
         )
         rec = ExecutionRecord(
-            order_id=order_id, symbol=symbol, side=side,
-            order_type=order_type, requested_price=requested_price,
-            expected_fill=expected_fill, actual_fill=actual_fill,
-            slippage_bps=slippage_bps, latency_ms=latency_ms,
-            rejected=rejected, partial=partial, regime=regime,
+            order_id=order_id,
+            symbol=symbol,
+            side=side,
+            order_type=order_type,
+            requested_price=requested_price,
+            expected_fill=expected_fill,
+            actual_fill=actual_fill,
+            slippage_bps=slippage_bps,
+            latency_ms=latency_ms,
+            rejected=rejected,
+            partial=partial,
+            regime=regime,
             adverse_selection=adverse,
         )
         self._records.append(rec)
         if len(self._records) > self._max_records:
-            self._records = self._records[-self._max_records:]
+            self._records = self._records[-self._max_records :]
 
     @staticmethod
     def _percentile(vals: list[float], p: float) -> float:
@@ -267,8 +310,12 @@ class ExecutionMetrics:
             "n_rejected": len(rejected),
             "n_adverse": len(adverse),
             "rejection_rate_pct": round(len(rejected) / n * 100, 2),
-            "adverse_rate_pct": round(len(adverse) / len(fills) * 100, 2) if fills else 0,
-            "avg_slippage_bps": round(sum(slippage) / len(slippage), 2) if slippage else 0,
+            "adverse_rate_pct": (
+                round(len(adverse) / len(fills) * 100, 2) if fills else 0
+            ),
+            "avg_slippage_bps": (
+                round(sum(slippage) / len(slippage), 2) if slippage else 0
+            ),
             "p50_slippage_bps": self._percentile(slippage, 50),
             "p95_slippage_bps": self._percentile(slippage, 95),
             "p99_slippage_bps": self._percentile(slippage, 99),
@@ -279,6 +326,7 @@ class ExecutionMetrics:
 
 
 # ── Adversarial Events ──────────────────────────────────────────────────────────
+
 
 @dataclass
 class AdversarialConfig:
@@ -317,7 +365,9 @@ class AdversarialMarketEngine:
         # HFT noise burst
         if self._hft_burst_remaining > 0:
             self._hft_burst_remaining -= 1
-            return base_price + random.gauss(0, base_price * (self._cfg.noise_bps / 10_000))
+            return base_price + random.gauss(
+                0, base_price * (self._cfg.noise_bps / 10_000)
+            )
 
         # Continue active event
         if self._event_ticks_remaining > 0:
@@ -345,11 +395,23 @@ class AdversarialMarketEngine:
         if self._active_event == "stop_hunt":
             ticks_left = self._event_ticks_remaining
             if ticks_left > 2:
-                drift = self._event_origin_price * (self._cfg.stop_hunt_depth_bps / 10_000) * 0.3
+                drift = (
+                    self._event_origin_price
+                    * (self._cfg.stop_hunt_depth_bps / 10_000)
+                    * 0.3
+                )
                 return self._event_origin_price + drift
             else:
-                snap = self._event_origin_price * (self._cfg.stop_hunt_depth_bps / 10_000) * 0.8
-                return self._event_origin_price - snap + random.gauss(0, self._event_origin_price * 0.001)
+                snap = (
+                    self._event_origin_price
+                    * (self._cfg.stop_hunt_depth_bps / 10_000)
+                    * 0.8
+                )
+                return (
+                    self._event_origin_price
+                    - snap
+                    + random.gauss(0, self._event_origin_price * 0.001)
+                )
 
         elif self._active_event == "fake_breakout":
             ticks = self._event_ticks_remaining
@@ -357,19 +419,28 @@ class AdversarialMarketEngine:
                 push = self._event_origin_price * (self._cfg.whipsaw_depth_bps / 10_000)
                 return self._event_origin_price + push
             else:
-                pullback = self._event_origin_price * (self._cfg.whipsaw_depth_bps / 10_000) * 0.9
+                pullback = (
+                    self._event_origin_price
+                    * (self._cfg.whipsaw_depth_bps / 10_000)
+                    * 0.9
+                )
                 return self._event_origin_price - pullback
 
         elif self._active_event == "whipsaw":
             phase = (8 - self._event_ticks_remaining) % 4
-            amplitude = self._event_origin_price * (self._cfg.whipsaw_depth_bps / 10_000)
+            amplitude = self._event_origin_price * (
+                self._cfg.whipsaw_depth_bps / 10_000
+            )
             direction = 1 if phase < 2 else -1
-            return self._event_origin_price + direction * amplitude * 0.5 * (random.random() + 0.5)
+            return self._event_origin_price + direction * amplitude * 0.5 * (
+                random.random() + 0.5
+            )
 
         return base_price
 
 
 # ── Config ──────────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class MarketRealismConfig:
@@ -405,6 +476,7 @@ class MarketRealismConfig:
 
 
 # ── Main Realism Engine ─────────────────────────────────────────────────────────
+
 
 class MarketRealismEngine:
     """
@@ -507,7 +579,11 @@ class MarketRealismEngine:
         """Switch to a new regime, preferring extreme ones occasionally."""
         candidates = [r for r in VolatilityRegime if r != self._current_regime]
         if random.random() < 0.3:
-            candidates = [VolatilityRegime.CASCADE, VolatilityRegime.CRASH, VolatilityRegime.SPIKE] + candidates
+            candidates = [
+                VolatilityRegime.CASCADE,
+                VolatilityRegime.CRASH,
+                VolatilityRegime.SPIKE,
+            ] + candidates
         self._current_regime = random.choice(candidates)
         self._regime_ticks = 0
         regime_cfg = REGIME_DEFAULTS[self._current_regime]
@@ -544,19 +620,26 @@ class MarketRealismEngine:
 
         # ── Rejection simulation ───────────────────────────────────────────────
         reject_prob = (
-            self._cfg.random_rejection_rate
-            * self._cfg.rejection_rate_mult
+            self._cfg.random_rejection_rate * self._cfg.rejection_rate_mult
             + regime_cfg.rejection_rate
         )
         if random.random() < reject_prob:
             self._metrics.record(
-                order_id=order_id, symbol=symbol, side=side,
-                order_type="market", requested_price=current_price,
-                expected_fill=current_price, actual_fill=0.0,
-                slippage_bps=0.0, latency_ms=0.0,
-                rejected=True, regime=self._current_regime.name,
+                order_id=order_id,
+                symbol=symbol,
+                side=side,
+                order_type="market",
+                requested_price=current_price,
+                expected_fill=current_price,
+                actual_fill=0.0,
+                slippage_bps=0.0,
+                latency_ms=0.0,
+                rejected=True,
+                regime=self._current_regime.name,
             )
-            raise Exception(f"[RealismLayer] Order rejected — market conditions (regime: {self._current_regime.name})")
+            raise Exception(
+                f"[RealismLayer] Order rejected — market conditions (regime: {self._current_regime.name})"
+            )
 
         # ── Realistic latency ─────────────────────────────────────────────────
         latency = await self._compute_realistic_latency(regime_cfg)
@@ -565,12 +648,17 @@ class MarketRealismEngine:
         expected_fill_price = current_price
         expected_slippage = 0.0
         if self._cfg.enable_order_book and symbol in self._books:
-            expected_fill_price, expected_slippage, _ = self._books[symbol].compute_fill_price(
+            expected_fill_price, expected_slippage, _ = self._books[
+                symbol
+            ].compute_fill_price(
                 side=side, quantity=amount, regime=self._current_regime
             )
 
         # ── Delayed fill ──────────────────────────────────────────────────────
-        if self._cfg.enable_delayed_fills and random.random() < self._cfg.delayed_fill_prob:
+        if (
+            self._cfg.enable_delayed_fills
+            and random.random() < self._cfg.delayed_fill_prob
+        ):
             delay_ms = random.uniform(50, self._cfg.delayed_fill_max_ms)
             await asyncio.sleep(delay_ms / 1000)
             expected_slippage += random.uniform(0.5, 2.0)
@@ -582,7 +670,9 @@ class MarketRealismEngine:
             )
             self._metrics.record(
                 order_id=result.get("id", order_id),
-                symbol=symbol, side=side, order_type="market",
+                symbol=symbol,
+                side=side,
+                order_type="market",
                 requested_price=current_price,
                 expected_fill=expected_fill_price,
                 actual_fill=result.get("fill_price", expected_fill_price),
@@ -595,20 +685,30 @@ class MarketRealismEngine:
             return result
         except Exception as exc:
             self._metrics.record(
-                order_id=order_id, symbol=symbol, side=side,
-                order_type="market", requested_price=current_price,
-                expected_fill=expected_fill_price, actual_fill=0.0,
-                slippage_bps=0.0, latency_ms=latency,
-                rejected=True, regime=self._current_regime.name,
+                order_id=order_id,
+                symbol=symbol,
+                side=side,
+                order_type="market",
+                requested_price=current_price,
+                expected_fill=expected_fill_price,
+                actual_fill=0.0,
+                slippage_bps=0.0,
+                latency_ms=latency,
+                rejected=True,
+                regime=self._current_regime.name,
             )
             raise
 
     async def _compute_realistic_latency(self, regime_cfg) -> float:
         if random.random() < self._cfg.latency_spike_prob:
-            spike = random.uniform(self._cfg.max_latency_spike_ms * 0.5, self._cfg.max_latency_spike_ms)
+            spike = random.uniform(
+                self._cfg.max_latency_spike_ms * 0.5, self._cfg.max_latency_spike_ms
+            )
             await asyncio.sleep(spike / 1000)
             return round(spike, 2)
-        base = max(5.0, random.gauss(self._cfg.base_latency_ms, self._cfg.latency_jitter_ms))
+        base = max(
+            5.0, random.gauss(self._cfg.base_latency_ms, self._cfg.latency_jitter_ms)
+        )
         regime_add = (regime_cfg.spread_mult - 1.0) * 20
         total = base + max(0.0, regime_add)
         await asyncio.sleep(total / 1000)
@@ -618,7 +718,10 @@ class MarketRealismEngine:
 
     async def get_ticker(self, symbol: str) -> dict:
         ticker = await self._exchange.get_ticker(symbol)
-        if self._cfg.enable_stale_snapshot and random.random() < self._cfg.stale_snapshot_prob:
+        if (
+            self._cfg.enable_stale_snapshot
+            and random.random() < self._cfg.stale_snapshot_prob
+        ):
             adj = random.uniform(-0.002, 0.002)
             ticker["last"] = ticker["last"] * (1 + adj)
             ticker["bid"] = ticker["bid"] * (1 + adj)
@@ -626,7 +729,9 @@ class MarketRealismEngine:
             ticker["_stale"] = True
         return ticker
 
-    async def get_ohlcv(self, symbol: str, timeframe: str = "1m", limit: int = 100) -> list:
+    async def get_ohlcv(
+        self, symbol: str, timeframe: str = "1m", limit: int = 100
+    ) -> list:
         candles = await self._exchange.get_ohlcv(symbol, timeframe, limit)
         if not self._cfg.enable_ohlcv_noise:
             return candles
@@ -635,8 +740,12 @@ class MarketRealismEngine:
             regime_vol = abs(regime_cfg.price_drift_bps) * 0.5
             body_noise = random.gauss(0, regime_vol / 10_000 * candle["close"])
             candle["close"] = round(candle["close"] + body_noise, 8)
-            candle["high"] = round(max(candle["high"], candle["close"] * (1 + random.uniform(0, 0.001))), 8)
-            candle["low"] = round(min(candle["low"], candle["close"] * (1 - random.uniform(0, 0.001))), 8)
+            candle["high"] = round(
+                max(candle["high"], candle["close"] * (1 + random.uniform(0, 0.001))), 8
+            )
+            candle["low"] = round(
+                min(candle["low"], candle["close"] * (1 - random.uniform(0, 0.001))), 8
+            )
             if random.random() < 0.05:
                 wick_mult = random.uniform(1.002, 1.008)
                 if random.random() < 0.5:

@@ -3,7 +3,6 @@
 from datetime import datetime, timezone
 from typing import Optional
 from dataclasses import dataclass
-import uuid
 
 from config.settings import settings
 from logging.logger import get_logger
@@ -57,7 +56,11 @@ class ExecutionEngine:
         """
 
         if action == "HOLD":
-            return ExecutionResult(accepted=False, rejection_reason="AI recommended HOLD", action_taken="none")
+            return ExecutionResult(
+                accepted=False,
+                rejection_reason="AI recommended HOLD",
+                action_taken="none",
+            )
 
         # ── Stale price guard ──────────────────────────────────────────────────
         if market_snapshot_age > self.MAX_SNAPSHOT_AGE_SECONDS:
@@ -67,7 +70,9 @@ class ExecutionEngine:
                 snapshot_age=market_snapshot_age,
                 max_age=self.MAX_SNAPSHOT_AGE_SECONDS,
             )
-            await self._log_rejection(decision_id, f"Stale price data ({market_snapshot_age:.1f}s old)")
+            await self._log_rejection(
+                decision_id, f"Stale price data ({market_snapshot_age:.1f}s old)"
+            )
             return ExecutionResult(
                 accepted=False,
                 rejection_reason=f"Market data stale ({market_snapshot_age:.1f}s) — refusing to execute",
@@ -80,21 +85,41 @@ class ExecutionEngine:
             current_price = ticker["last"]
         except Exception as e:
             log.error("price_fetch_failed", error=str(e))
-            return ExecutionResult(accepted=False, rejection_reason=f"Price fetch failed: {e}", action_taken="none")
+            return ExecutionResult(
+                accepted=False,
+                rejection_reason=f"Price fetch failed: {e}",
+                action_taken="none",
+            )
 
         if not current_price or current_price <= 0:
-            await self._log_rejection(decision_id, "Invalid price from exchange (0 or negative)")
-            return ExecutionResult(accepted=False, rejection_reason="Invalid price from exchange", action_taken="none")
+            await self._log_rejection(
+                decision_id, "Invalid price from exchange (0 or negative)"
+            )
+            return ExecutionResult(
+                accepted=False,
+                rejection_reason="Invalid price from exchange",
+                action_taken="none",
+            )
 
         # ── Run risk checks (uses fresh price for position value) ───────────────
         risk_result: RiskCheckResult = await risk_engine.check(
-            action=action, symbol=symbol, price=current_price, size=0  # size checked after quantity calc
+            action=action,
+            symbol=symbol,
+            price=current_price,
+            size=0,  # size checked after quantity calc
         )
 
         if not risk_result.allowed:
-            log.warning("trade_rejected_by_risk", action=action, symbol=symbol, reason=risk_result.reason)
+            log.warning(
+                "trade_rejected_by_risk",
+                action=action,
+                symbol=symbol,
+                reason=risk_result.reason,
+            )
             await self._log_rejection(decision_id, risk_result.reason)
-            return ExecutionResult(accepted=False, rejection_reason=risk_result.reason, action_taken="none")
+            return ExecutionResult(
+                accepted=False, rejection_reason=risk_result.reason, action_taken="none"
+            )
 
         # ── Calculate position size ────────────────────────────────────────────
         risk_state = await risk_engine.get_risk_report()
@@ -103,8 +128,14 @@ class ExecutionEngine:
         quantity = round(position_value / current_price, 6)
 
         if quantity <= 0:
-            await self._log_rejection(decision_id, f"Invalid quantity computed: {quantity}")
-            return ExecutionResult(accepted=False, rejection_reason=f"Invalid quantity: {quantity}", action_taken="none")
+            await self._log_rejection(
+                decision_id, f"Invalid quantity computed: {quantity}"
+            )
+            return ExecutionResult(
+                accepted=False,
+                rejection_reason=f"Invalid quantity: {quantity}",
+                action_taken="none",
+            )
 
         # ── Execute with idempotency key ───────────────────────────────────────
         idempotency_key = f"{symbol}:{action}:{decision_id}:{int(datetime.now(timezone.utc).timestamp() // 60)}"
@@ -199,31 +230,50 @@ class ExecutionEngine:
             )
 
         except DuplicateOrderError as e:
-            log.warning("duplicate_order_rejected", reason=str(e), idempotency_key=idempotency_key)
+            log.warning(
+                "duplicate_order_rejected",
+                reason=str(e),
+                idempotency_key=idempotency_key,
+            )
             await self._log_rejection(decision_id, f"Duplicate order blocked: {e}")
-            return ExecutionResult(accepted=False, rejection_reason=str(e), action_taken="none")
+            return ExecutionResult(
+                accepted=False, rejection_reason=str(e), action_taken="none"
+            )
 
         except Exception as e:
             log.error("trade_execution_error", symbol=symbol, error=str(e))
-            return ExecutionResult(accepted=False, rejection_reason=f"Execution error: {e}")
+            return ExecutionResult(
+                accepted=False, rejection_reason=f"Execution error: {e}"
+            )
 
-    async def _open_position(self, symbol: str, side: str, quantity: float, price: float) -> None:
+    async def _open_position(
+        self, symbol: str, side: str, quantity: float, price: float
+    ) -> None:
         async with async_session_factory() as session:
             from sqlalchemy import select
             from db.models import Position as Pos
 
             result = await session.execute(
-                select(Pos).where(Pos.symbol == symbol, Pos.status == PositionStatus.OPEN.value)
+                select(Pos).where(
+                    Pos.symbol == symbol, Pos.status == PositionStatus.OPEN.value
+                )
             )
             existing = result.scalar_one_or_none()
 
             if existing:
                 if existing.side.upper() != side.upper():
-                    log.error("position_side_conflict", symbol=symbol, existing=existing.side, incoming=side)
+                    log.error(
+                        "position_side_conflict",
+                        symbol=symbol,
+                        existing=existing.side,
+                        incoming=side,
+                    )
                     # Don't average — log and abort for safety
                     return
                 total_qty = existing.quantity + quantity
-                avg_price = (existing.entry_price * existing.quantity + price * quantity) / total_qty
+                avg_price = (
+                    existing.entry_price * existing.quantity + price * quantity
+                ) / total_qty
                 existing.quantity = total_qty
                 existing.entry_price = avg_price
                 existing.current_price = price
@@ -246,12 +296,16 @@ class ExecutionEngine:
             from db.models import Position as Pos
 
             result = await session.execute(
-                select(Pos).where(Pos.symbol == symbol, Pos.status == PositionStatus.OPEN.value)
+                select(Pos).where(
+                    Pos.symbol == symbol, Pos.status == PositionStatus.OPEN.value
+                )
             )
             position = result.scalar_one_or_none()
 
             if not position:
-                log.error("close_position_no_open_position", symbol=symbol, quantity=quantity)
+                log.error(
+                    "close_position_no_open_position", symbol=symbol, quantity=quantity
+                )
                 return
 
             pnl = (
@@ -283,29 +337,39 @@ class ExecutionEngine:
             from sqlalchemy import select
             from db.models import Position as Pos
 
-            result = await session.execute(select(Pos).where(Pos.status == PositionStatus.OPEN.value))
+            result = await session.execute(
+                select(Pos).where(Pos.status == PositionStatus.OPEN.value)
+            )
             db_positions = result.scalars().all()
 
         for pos in db_positions:
             try:
                 exchange_amount = await exchange_service.get_position(pos.symbol)
                 if exchange_amount is None:
-                    discrepancies.append({
-                        "symbol": pos.symbol,
-                        "issue": "DB shows position OPEN, exchange shows none",
-                        "db_quantity": pos.quantity,
-                        "exchange_quantity": 0,
-                        "action": "CLOSE_DB_POSITION",
-                    })
-                    log.warning("reconcile_position_missing_on_exchange", symbol=pos.symbol, db_qty=pos.quantity)
+                    discrepancies.append(
+                        {
+                            "symbol": pos.symbol,
+                            "issue": "DB shows position OPEN, exchange shows none",
+                            "db_quantity": pos.quantity,
+                            "exchange_quantity": 0,
+                            "action": "CLOSE_DB_POSITION",
+                        }
+                    )
+                    log.warning(
+                        "reconcile_position_missing_on_exchange",
+                        symbol=pos.symbol,
+                        db_qty=pos.quantity,
+                    )
                 elif abs(exchange_amount.get("amount", 0) - pos.quantity) > 0.00001:
-                    discrepancies.append({
-                        "symbol": pos.symbol,
-                        "issue": "Position quantity mismatch",
-                        "db_quantity": pos.quantity,
-                        "exchange_quantity": exchange_amount.get("amount"),
-                        "action": "REVIEW_AND_CORRECT",
-                    })
+                    discrepancies.append(
+                        {
+                            "symbol": pos.symbol,
+                            "issue": "Position quantity mismatch",
+                            "db_quantity": pos.quantity,
+                            "exchange_quantity": exchange_amount.get("amount"),
+                            "action": "REVIEW_AND_CORRECT",
+                        }
+                    )
                     log.warning(
                         "reconcile_position_mismatch",
                         symbol=pos.symbol,
@@ -313,9 +377,14 @@ class ExecutionEngine:
                         exchange_qty=exchange_amount.get("amount"),
                     )
             except Exception as e:
-                log.error("reconcile_exchange_fetch_failed", symbol=pos.symbol, error=str(e))
+                log.error(
+                    "reconcile_exchange_fetch_failed", symbol=pos.symbol, error=str(e)
+                )
 
-        return {"discrepancies": discrepancies, "checked_at": datetime.now(timezone.utc).isoformat()}
+        return {
+            "discrepancies": discrepancies,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }
 
     async def _log_rejection(self, decision_id: int, reason: str) -> None:
         try:
@@ -323,7 +392,9 @@ class ExecutionEngine:
                 from sqlalchemy import select
                 from db.models import AIDecision
 
-                result = await session.execute(select(AIDecision).where(AIDecision.id == decision_id))
+                result = await session.execute(
+                    select(AIDecision).where(AIDecision.id == decision_id)
+                )
                 decision = result.scalar_one_or_none()
                 if decision:
                     decision.accepted = False
@@ -337,7 +408,10 @@ class ExecutionEngine:
         async with async_session_factory() as session:
             from sqlalchemy import select
             from db.models import Position as Pos
-            result = await session.execute(select(Pos).where(Pos.status == PositionStatus.OPEN.value))
+
+            result = await session.execute(
+                select(Pos).where(Pos.status == PositionStatus.OPEN.value)
+            )
             positions = result.scalars().all()
             return [self._position_to_dict(p) for p in positions]
 
@@ -350,14 +424,14 @@ class ExecutionEngine:
             positions = result.scalars().all()
 
             total_realized = sum(p.realized_pnl or 0 for p in positions)
-            total_unrealized = sum(
-                self._calc_unrealized(p) for p in positions
-            )
+            total_unrealized = sum(self._calc_unrealized(p) for p in positions)
             return {
                 "total_realized_pnl": round(total_realized, 4),
                 "total_unrealized_pnl": round(total_unrealized, 4),
                 "total_pnl": round(total_realized + total_unrealized, 4),
-                "open_positions_count": len([p for p in positions if p.status == PositionStatus.OPEN.value]),
+                "open_positions_count": len(
+                    [p for p in positions if p.status == PositionStatus.OPEN.value]
+                ),
             }
 
     def _calc_unrealized(self, p: Position) -> float:
@@ -381,7 +455,6 @@ class ExecutionEngine:
 
 class FatalExecutionError(Exception):
     """Order was placed on exchange but DB recording failed. Requires manual intervention."""
-    pass
 
 
 execution_engine = ExecutionEngine()

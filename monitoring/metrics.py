@@ -62,7 +62,9 @@ def track_latency(metric: Histogram = request_latency):
                 return result
             finally:
                 duration = time.perf_counter() - start
-                metric.labels(method="internal", endpoint=fn.__name__, status="ok").observe(duration)
+                metric.labels(
+                    method="internal", endpoint=fn.__name__, status="ok"
+                ).observe(duration)
 
         @wraps(fn)
         def sync_wrapper(*args, **kwargs):
@@ -72,9 +74,12 @@ def track_latency(metric: Histogram = request_latency):
                 return result
             finally:
                 duration = time.perf_counter() - start
-                metric.labels(method="internal", endpoint=fn.__name__, status="ok").observe(duration)
+                metric.labels(
+                    method="internal", endpoint=fn.__name__, status="ok"
+                ).observe(duration)
 
         import asyncio
+
         if asyncio.iscoroutinefunction(fn):
             return async_wrapper
         return sync_wrapper
@@ -85,8 +90,10 @@ def track_latency(metric: Histogram = request_latency):
 # ── System Info ───────────────────────────────────────────────────────────────
 
 system_info = Info("trading_system", "Trading system information")
-system_info.info({
-    "version": "1.0.0",
-    "symbol": "BTC/USDT",
-    "environment": "development",
-})
+system_info.info(
+    {
+        "version": "1.0.0",
+        "symbol": "BTC/USDT",
+        "environment": "development",
+    }
+)

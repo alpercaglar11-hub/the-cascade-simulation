@@ -1,8 +1,10 @@
 """
 Pytest configuration for paper_trading tests.
 """
+
 import pytest
 import sys
+
 sys.path.insert(0, "/home/alper/trading_system")
 
 from paper_trading.engine import PaperExchange

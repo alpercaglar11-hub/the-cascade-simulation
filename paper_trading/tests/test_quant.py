@@ -19,26 +19,44 @@ import pytest
 import numpy as np
 
 from paper_trading.quant.interface import (
-    BaseStrategy, Parameter, Signal, SignalType,
-    sma, ema, rsi, atr, bollinger_bands, momentum,
+    BaseStrategy,
+    Parameter,
+    Signal,
+    SignalType,
+    sma,
+    ema,
+    rsi,
+    atr,
+    bollinger_bands,
+    momentum,
 )
 from paper_trading.quant.stats import (
-    EquityCurve, PerformanceStats, StatsCalculator,
-    TradeRecord, MonteCarloEngine, MonteCarloResult,
+    EquityCurve,
+    PerformanceStats,
+    StatsCalculator,
+    TradeRecord,
+    MonteCarloEngine,
+    MonteCarloResult,
 )
 from paper_trading.quant.regime import (
-    RegimeType, RegimeDetector, RegimePerformanceTracker,
+    RegimeType,
+    RegimeDetector,
+    RegimePerformanceTracker,
 )
 from paper_trading.quant.anti_overfit import (
-    AntiOverfitEngine, StabilityReport, bootstrap_stability,
+    AntiOverfitEngine,
+    StabilityReport,
+    bootstrap_stability,
 )
 from paper_trading.quant.portfolio import (
-    PortfolioBuilder, PortfolioConfig, PortfolioResult,
+    PortfolioBuilder,
+    PortfolioConfig,
+    PortfolioResult,
     build_correlation_matrix,
 )
 
-
 # ── Fixtures ────────────────────────────────────────────────────────────────────
+
 
 def make_trade(pnl: float, regime: str = "TREND", duration: int = 10) -> TradeRecord:
     now = datetime.utcnow()
@@ -59,6 +77,7 @@ def make_trade(pnl: float, regime: str = "TREND", duration: int = 10) -> TradeRe
 
 # ── Interface Tests ─────────────────────────────────────────────────────────────
 
+
 def test_signal_is_actionable():
     assert Signal(SignalType.BUY, "BTC/USDT").is_actionable()
     assert Signal(SignalType.SELL, "BTC/USDT").is_actionable()
@@ -77,7 +96,11 @@ def test_parameter_bounds():
 def test_parameter_injection():
     class TestStrategy(BaseStrategy):
         def parameters(self):
-            return [Parameter("period", 14, min=5, max=50), Parameter("threshold", 0.5, min=0.0, max=1.0)]
+            return [
+                Parameter("period", 14, min=5, max=50),
+                Parameter("threshold", 0.5, min=0.0, max=1.0),
+            ]
+
         def on_bar(self, candle):
             return None
 
@@ -94,6 +117,7 @@ def test_strategy_inject_returns_new_instance():
     class TestStrategy(BaseStrategy):
         def parameters(self):
             return [Parameter("period", 14)]
+
         def on_bar(self, candle):
             return None
 
@@ -106,6 +130,7 @@ def test_strategy_inject_returns_new_instance():
 
 # ── Indicator Tests ─────────────────────────────────────────────────────────────
 
+
 def test_sma():
     arr = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
     assert sma(arr, 3) == 5.0
@@ -114,12 +139,16 @@ def test_sma():
 
 def test_rsi():
     # Steady rise → RSI should be high (>50)
-    up = np.array([100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0, 110.0])
+    up = np.array(
+        [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0, 110.0]
+    )
     rsi_val = rsi(up, 5)
     assert rsi_val > 50
 
     # Steady fall → RSI should be low (<50)
-    down = np.array([110.0, 109.0, 108.0, 107.0, 106.0, 105.0, 104.0, 103.0, 102.0, 101.0, 100.0])
+    down = np.array(
+        [110.0, 109.0, 108.0, 107.0, 106.0, 105.0, 104.0, 103.0, 102.0, 101.0, 100.0]
+    )
     rsi_val2 = rsi(down, 5)
     assert rsi_val2 < 50
 
@@ -138,6 +167,7 @@ def test_bollinger_bands():
 
 
 # ── Stats Calculator Tests ───────────────────────────────────────────────────────
+
 
 def test_stats_calculator_basic():
     trades = [
@@ -196,11 +226,13 @@ def test_stats_calculator_max_drawdown():
 def test_alpha_decay():
     # Generate returns with slight decay
     rng = np.random.default_rng(42)
-    returns = np.concatenate([
-        rng.normal(0.01, 0.02, 30),
-        rng.normal(0.005, 0.02, 30),
-        rng.normal(0.002, 0.02, 30),
-    ])
+    returns = np.concatenate(
+        [
+            rng.normal(0.01, 0.02, 30),
+            rng.normal(0.005, 0.02, 30),
+            rng.normal(0.002, 0.02, 30),
+        ]
+    )
     slope = StatsCalculator._compute_alpha_decay(returns, lookback=20)
     # Alpha should be slightly negative (later returns worse than earlier)
     assert isinstance(slope, float)
@@ -220,6 +252,7 @@ def test_regime_stats():
 
 
 # ── Monte Carlo Tests ──────────────────────────────────────────────────────────
+
 
 def test_monte_carlo_survival_rate():
     # Losing strategy — low survival
@@ -250,6 +283,7 @@ def test_monte_carlo_confidence_interval():
 
 # ── Regime Detection Tests ──────────────────────────────────────────────────────
 
+
 def test_regime_detector_classifies_trending():
     detector = RegimeDetector(lookback=30, adx_period=10)
 
@@ -258,15 +292,19 @@ def test_regime_detector_classifies_trending():
     for i in range(100):
         price += 15  # steady drift up
         candle = {
-            "open": price - 5, "high": price + 15,
-            "low": price - 15, "close": price + 5,
+            "open": price - 5,
+            "high": price + 15,
+            "low": price - 15,
+            "close": price + 5,
             "volume": 1000,
         }
         detector.update(candle)
 
     regime = detector.classify()
     # Should NOT be LOW_VOL (our default "no data" regime)
-    assert regime != RegimeType.LOW_VOL, f"Expected non-LOW_VOL regime for steady uptrend, got {regime}"
+    assert (
+        regime != RegimeType.LOW_VOL
+    ), f"Expected non-LOW_VOL regime for steady uptrend, got {regime}"
 
 
 def test_regime_detector_panic_on_volume_spike():
@@ -274,15 +312,21 @@ def test_regime_detector_panic_on_volume_spike():
     price = 50_000.0
     for i in range(60):
         price -= 20  # gradual decline
-        detector.update({"close": price, "high": price + 10, "low": price - 10, "volume": 1000})
+        detector.update(
+            {"close": price, "high": price + 10, "low": price - 10, "volume": 1000}
+        )
 
     # Sharp volume spike with fast drop → PANIC
     for _ in range(5):
         price -= 200  # fast crash
-        detector.update({"close": price, "high": price + 50, "low": price - 100, "volume": 8000})
+        detector.update(
+            {"close": price, "high": price + 50, "low": price - 100, "volume": 8000}
+        )
 
     regime = detector.classify()
-    assert regime == RegimeType.PANIC, f"Expected PANIC on volume spike + drop, got {regime}"
+    assert (
+        regime == RegimeType.PANIC
+    ), f"Expected PANIC on volume spike + drop, got {regime}"
 
 
 def test_regime_performance_tracker():
@@ -302,19 +346,39 @@ def test_regime_performance_tracker():
 
 # ── Anti-Overfit Tests ──────────────────────────────────────────────────────────
 
+
 def test_anti_overfit_rejects_high_sensitivity():
     engine = AntiOverfitEngine(param_sensitivity_threshold=0.3)
 
     is_stats = PerformanceStats(
-        run_id="run1", strategy_name="Test",
-        n_trades=20, sharpe_ratio=1.5, sortino_ratio=2.0,
-        max_drawdown_pct=0.1, n_wins=12, n_losses=8,
+        run_id="run1",
+        strategy_name="Test",
+        n_trades=20,
+        sharpe_ratio=1.5,
+        sortino_ratio=2.0,
+        max_drawdown_pct=0.1,
+        n_wins=12,
+        n_losses=8,
     )
 
     # Highly sensitive: tiny param change destroys performance
     perturbed = [
-        PerformanceStats(run_id="p1", sharpe_ratio=0.1, sortino_ratio=0.2, n_trades=20, n_wins=10, n_losses=10),
-        PerformanceStats(run_id="p2", sharpe_ratio=0.2, sortino_ratio=0.3, n_trades=20, n_wins=11, n_losses=9),
+        PerformanceStats(
+            run_id="p1",
+            sharpe_ratio=0.1,
+            sortino_ratio=0.2,
+            n_trades=20,
+            n_wins=10,
+            n_losses=10,
+        ),
+        PerformanceStats(
+            run_id="p2",
+            sharpe_ratio=0.2,
+            sortino_ratio=0.3,
+            n_trades=20,
+            n_wins=11,
+            n_losses=9,
+        ),
     ]
 
     report = engine.evaluate(is_stats, [], perturbed)
@@ -326,21 +390,44 @@ def test_anti_overfit_accepts_stable_params():
     engine = AntiOverfitEngine(param_sensitivity_threshold=0.3)
 
     is_stats = PerformanceStats(
-        run_id="run1", strategy_name="Test",
-        n_trades=50, sharpe_ratio=1.2, sortino_ratio=1.5,
-        max_drawdown_pct=0.1, n_wins=30, n_losses=20,
+        run_id="run1",
+        strategy_name="Test",
+        n_trades=50,
+        sharpe_ratio=1.2,
+        sortino_ratio=1.5,
+        max_drawdown_pct=0.1,
+        n_wins=30,
+        n_losses=20,
     )
 
     # Stable: perturbation barely affects Sharpe
     perturbed = [
-        PerformanceStats(run_id="p1", sharpe_ratio=1.15, sortino_ratio=1.4, n_trades=50, n_wins=29, n_losses=21),
-        PerformanceStats(run_id="p2", sharpe_ratio=1.18, sortino_ratio=1.45, n_trades=50, n_wins=28, n_losses=22),
+        PerformanceStats(
+            run_id="p1",
+            sharpe_ratio=1.15,
+            sortino_ratio=1.4,
+            n_trades=50,
+            n_wins=29,
+            n_losses=21,
+        ),
+        PerformanceStats(
+            run_id="p2",
+            sharpe_ratio=1.18,
+            sortino_ratio=1.45,
+            n_trades=50,
+            n_wins=28,
+            n_losses=22,
+        ),
     ]
 
     # Some OOS windows also positive
     oos_stats = [
-        PerformanceStats(run_id="oos1", sharpe_ratio=0.8, n_trades=15, n_wins=9, n_losses=6),
-        PerformanceStats(run_id="oos2", sharpe_ratio=1.0, n_trades=20, n_wins=12, n_losses=8),
+        PerformanceStats(
+            run_id="oos1", sharpe_ratio=0.8, n_trades=15, n_wins=9, n_losses=6
+        ),
+        PerformanceStats(
+            run_id="oos2", sharpe_ratio=1.0, n_trades=20, n_wins=12, n_losses=8
+        ),
     ]
 
     report = engine.evaluate(is_stats, oos_stats, perturbed)
@@ -360,24 +447,58 @@ def test_bootstrap_stability():
 
 # ── Portfolio Tests ─────────────────────────────────────────────────────────────
 
+
 def test_portfolio_builder_filters_correlated():
     cfg = PortfolioConfig(max_strategies=3, correlation_threshold=0.7)
     builder = PortfolioBuilder(cfg)
 
     # Three strategies with similar regime profiles (high correlation)
-    s1 = PerformanceStats(run_id="s1", strategy_name="Strategy1", sharpe_ratio=1.5, sortino_ratio=1.8, annualized_volatility=0.15, max_drawdown_pct=0.1, n_trades=50, n_wins=30, n_losses=20, regime_stats={
-        RegimeType.TREND: {"win_rate": 0.6, "total_pnl": 5000.0},
-        RegimeType.HIGH_VOL: {"win_rate": 0.5, "total_pnl": 2000.0},
-    })
-    s2 = PerformanceStats(run_id="s2", strategy_name="Strategy2", sharpe_ratio=1.3, sortino_ratio=1.6, annualized_volatility=0.14, max_drawdown_pct=0.12, n_trades=50, n_wins=28, n_losses=22, regime_stats={
-        RegimeType.TREND: {"win_rate": 0.58, "total_pnl": 4800.0},
-        RegimeType.HIGH_VOL: {"win_rate": 0.52, "total_pnl": 1900.0},
-    })
+    s1 = PerformanceStats(
+        run_id="s1",
+        strategy_name="Strategy1",
+        sharpe_ratio=1.5,
+        sortino_ratio=1.8,
+        annualized_volatility=0.15,
+        max_drawdown_pct=0.1,
+        n_trades=50,
+        n_wins=30,
+        n_losses=20,
+        regime_stats={
+            RegimeType.TREND: {"win_rate": 0.6, "total_pnl": 5000.0},
+            RegimeType.HIGH_VOL: {"win_rate": 0.5, "total_pnl": 2000.0},
+        },
+    )
+    s2 = PerformanceStats(
+        run_id="s2",
+        strategy_name="Strategy2",
+        sharpe_ratio=1.3,
+        sortino_ratio=1.6,
+        annualized_volatility=0.14,
+        max_drawdown_pct=0.12,
+        n_trades=50,
+        n_wins=28,
+        n_losses=22,
+        regime_stats={
+            RegimeType.TREND: {"win_rate": 0.58, "total_pnl": 4800.0},
+            RegimeType.HIGH_VOL: {"win_rate": 0.52, "total_pnl": 1900.0},
+        },
+    )
     # s3 is uncorrelated (different regime profile)
-    s3 = PerformanceStats(run_id="s3", strategy_name="Strategy3", sharpe_ratio=1.0, sortino_ratio=1.2, annualized_volatility=0.10, max_drawdown_pct=0.08, n_trades=50, n_wins=26, n_losses=24, regime_stats={
-        RegimeType.MEAN_REVERSION: {"win_rate": 0.65, "total_pnl": 4000.0},
-        RegimeType.LOW_VOL: {"win_rate": 0.55, "total_pnl": 1500.0},
-    })
+    s3 = PerformanceStats(
+        run_id="s3",
+        strategy_name="Strategy3",
+        sharpe_ratio=1.0,
+        sortino_ratio=1.2,
+        annualized_volatility=0.10,
+        max_drawdown_pct=0.08,
+        n_trades=50,
+        n_wins=26,
+        n_losses=24,
+        regime_stats={
+            RegimeType.MEAN_REVERSION: {"win_rate": 0.65, "total_pnl": 4000.0},
+            RegimeType.LOW_VOL: {"win_rate": 0.55, "total_pnl": 1500.0},
+        },
+    )
 
     result = builder.allocate([s1, s2, s3])
 
@@ -389,10 +510,17 @@ def test_portfolio_builder_filters_correlated():
 def test_portfolio_weights_sum_to_one():
     builder = PortfolioBuilder()
     stats = [
-        PerformanceStats(run_id=f"s{i}", strategy_name=f"Strat{i}",
-                         sharpe_ratio=1.0 + i * 0.1, sortino_ratio=1.2,
-                         annualized_volatility=0.1 + i * 0.01,
-                         max_drawdown_pct=0.1, n_trades=50, n_wins=25, n_losses=25)
+        PerformanceStats(
+            run_id=f"s{i}",
+            strategy_name=f"Strat{i}",
+            sharpe_ratio=1.0 + i * 0.1,
+            sortino_ratio=1.2,
+            annualized_volatility=0.1 + i * 0.01,
+            max_drawdown_pct=0.1,
+            n_trades=50,
+            n_wins=25,
+            n_losses=25,
+        )
         for i in range(4)
     ]
     result = builder.allocate(stats)
@@ -402,14 +530,21 @@ def test_portfolio_weights_sum_to_one():
 
 def test_correlation_matrix():
     stats = [
-        PerformanceStats(run_id=f"s{i}", strategy_name=f"Strat{i}",
-                         sharpe_ratio=1.0, sortino_ratio=1.0,
-                         annualized_volatility=0.1, max_drawdown_pct=0.1,
-                         n_trades=50, n_wins=25, n_losses=25,
-                         regime_stats={
-                             RegimeType.TREND: {"win_rate": 0.6, "total_pnl": 1000.0 * (i + 1)},
-                             RegimeType.LOW_VOL: {"win_rate": 0.5, "total_pnl": 500.0 * (i + 1)},
-                         })
+        PerformanceStats(
+            run_id=f"s{i}",
+            strategy_name=f"Strat{i}",
+            sharpe_ratio=1.0,
+            sortino_ratio=1.0,
+            annualized_volatility=0.1,
+            max_drawdown_pct=0.1,
+            n_trades=50,
+            n_wins=25,
+            n_losses=25,
+            regime_stats={
+                RegimeType.TREND: {"win_rate": 0.6, "total_pnl": 1000.0 * (i + 1)},
+                RegimeType.LOW_VOL: {"win_rate": 0.5, "total_pnl": 500.0 * (i + 1)},
+            },
+        )
         for i in range(3)
     ]
     names, matrix = build_correlation_matrix(stats)
@@ -420,6 +555,7 @@ def test_correlation_matrix():
 
 # ── Integration: Full Research Pipeline ─────────────────────────────────────────
 
+
 def test_parameter_sweep_rejects_unstable(exchange):
     """Run a parameter sweep on a known fragile strategy — unstable params should be rejected."""
 
@@ -429,6 +565,7 @@ def test_parameter_sweep_rejects_unstable(exchange):
                 Parameter("period", 5, min=2, max=50, step=1),
                 Parameter("threshold", 0.5, min=0.0, max=1.0),
             ]
+
         def on_bar(self, candle):
             return None
 
@@ -439,14 +576,16 @@ def test_parameter_sweep_rejects_unstable(exchange):
     price = 50_000.0
     for i in range(200):
         price += random.gauss(10, 100)
-        candles.append({
-            "timestamp": datetime.utcnow() + timedelta(minutes=i),
-            "open": price - 10,
-            "high": price + 20,
-            "low": price - 20,
-            "close": price,
-            "volume": random.uniform(100, 200),
-        })
+        candles.append(
+            {
+                "timestamp": datetime.utcnow() + timedelta(minutes=i),
+                "open": price - 10,
+                "high": price + 20,
+                "low": price - 20,
+                "close": price,
+                "volume": random.uniform(100, 200),
+            }
+        )
 
     env = ResearchEnvironment(
         candles=candles,
@@ -475,12 +614,14 @@ def test_strategy_comparison(exchange):
     class AStrategy(BaseStrategy):
         def parameters(self):
             return [Parameter("p", 10)]
+
         def on_bar(self, candle):
             return None
 
     class BStrategy(BaseStrategy):
         def parameters(self):
             return [Parameter("p", 20)]
+
         def on_bar(self, candle):
             return None
 
@@ -488,19 +629,27 @@ def test_strategy_comparison(exchange):
     price = 50_000.0
     for i in range(200):
         price += random.gauss(5, 80)
-        candles.append({
-            "timestamp": datetime.utcnow() + timedelta(minutes=i),
-            "open": price - 10, "high": price + 20,
-            "low": price - 20, "close": price, "volume": 150,
-        })
+        candles.append(
+            {
+                "timestamp": datetime.utcnow() + timedelta(minutes=i),
+                "open": price - 10,
+                "high": price + 20,
+                "low": price - 20,
+                "close": price,
+                "volume": 150,
+            }
+        )
 
     from paper_trading.quant.research import ResearchEnvironment
+
     env = ResearchEnvironment(candles=candles, exchange=exchange, enable_mc=False)
 
-    results = env.compare_strategies([
-        ("StrategyA", AStrategy, {"p": 10}),
-        ("StrategyB", BStrategy, {"p": 20}),
-    ])
+    results = env.compare_strategies(
+        [
+            ("StrategyA", AStrategy, {"p": 10}),
+            ("StrategyB", BStrategy, {"p": 20}),
+        ]
+    )
 
     assert len(results) == 2
     # Both ran without error

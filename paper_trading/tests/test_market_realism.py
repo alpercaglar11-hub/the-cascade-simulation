@@ -12,13 +12,11 @@ Tests cover:
 8. OHLCV noise injection
 """
 
-import asyncio
-import random
-import statistics
 import pytest
 
 # Use the system venv Python
 import sys
+
 sys.path.insert(0, "/home/alper/trading_system")
 
 from paper_trading.engine import PaperExchange, PaperExchangeDownError
@@ -32,8 +30,8 @@ from paper_trading.market_realism import (
     REGIME_DEFAULTS,
 )
 
-
 # ── Fixtures ────────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def exchange():
@@ -50,7 +48,7 @@ def config():
         base_latency_ms=20.0,
         latency_jitter_ms=5.0,
         random_rejection_rate=0.05,
-        delayed_fill_prob=0.0,   # disable for deterministic tests
+        delayed_fill_prob=0.0,  # disable for deterministic tests
         latency_spike_prob=0.0,
         stale_snapshot_prob=0.0,
         enable_stale_snapshot=True,
@@ -63,6 +61,7 @@ def realism(exchange, config):
 
 
 # ── 1. Order Book Tests ─────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_order_book_spread_tightens_in_low_volatility(exchange, config):
@@ -101,7 +100,7 @@ async def test_order_book_spread_widens_in_crash_regime(exchange, config):
 async def test_market_impact_large_order_walks_book(exchange, config):
     """Large orders should walk through multiple book levels with accumulating slippage."""
     config.enable_order_book = True
-    config.base_level_qty = 1.0   # very thin book
+    config.base_level_qty = 1.0  # very thin book
     r = MarketRealismEngine(exchange, config)
 
     await r.on_price_update("BTC/USDT", 50_000.0)
@@ -111,7 +110,9 @@ async def test_market_impact_large_order_walks_book(exchange, config):
     avg_price, slippage_bps, fills = book.compute_fill_price(
         side="buy", quantity=10.0, regime=VolatilityRegime.TREND
     )
-    assert len(fills) > 1, f"Large order should fill across multiple levels, got {len(fills)}"
+    assert (
+        len(fills) > 1
+    ), f"Large order should fill across multiple levels, got {len(fills)}"
     assert avg_price > 50_000.0, "Buy order fill price should be above mid"
     assert slippage_bps > 0, "Slippage should be positive for large order"
 
@@ -130,10 +131,13 @@ async def test_small_order_takes_top_of_book(exchange, config):
         side="buy", quantity=0.1, regime=VolatilityRegime.LOW
     )
     assert len(fills) == 1, "Small order should fill in a single level"
-    assert slippage_bps < 5.0, f"Small order slippage should be under 5 bps, got {slippage_bps}"
+    assert (
+        slippage_bps < 5.0
+    ), f"Small order slippage should be under 5 bps, got {slippage_bps}"
 
 
 # ── 2. Volatility Regime Tests ─────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_regime_tracks_state(exchange, config):
@@ -161,7 +165,9 @@ async def test_forced_regime_transition_to_crash(exchange, config):
 
     # CRASH regime has price_drift_bps = -50 — price should trend down
     # After 30 ticks with mean drift of -50 bps, net should be clearly negative
-    assert price < 49_500.0, f"CRASH regime should trend down significantly, ended at {price}"
+    assert (
+        price < 49_500.0
+    ), f"CRASH regime should trend down significantly, ended at {price}"
 
 
 @pytest.mark.asyncio
@@ -194,10 +200,11 @@ async def test_regime_config_attributes(exchange, config):
 
 # ── 3. Adversarial Event Tests ──────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_stop_hunt_snaps_back(exchange, config):
     """Stop hunt event should push price then snap back."""
-    config.adversarial.stop_hunt_prob = 1.0   # force it
+    config.adversarial.stop_hunt_prob = 1.0  # force it
     config.adversarial.fake_breakout_prob = 0.0
     config.adversarial.whipsaw_prob = 0.0
     config.adversarial.hft_noise_prob = 0.0
@@ -217,7 +224,9 @@ async def test_stop_hunt_snaps_back(exchange, config):
     max_price = max(prices)
     min_price = min(prices)
     # The event should have created a range — max should differ from initial
-    assert max_price != 50_000.0 or min_price != 50_000.0, "Adversarial event should have modified price"
+    assert (
+        max_price != 50_000.0 or min_price != 50_000.0
+    ), "Adversarial event should have modified price"
 
 
 @pytest.mark.asyncio
@@ -236,10 +245,14 @@ async def test_whipsaw_oscillation(exchange, config):
 
     # Check that at least some direction reversals occurred
     direction_changes = sum(
-        1 for i in range(1, len(prices))
-        if (prices[i] - prices[i-1]) * (prices[i-1] - prices[i-2] if i > 1 else 0) < 0
+        1
+        for i in range(1, len(prices))
+        if (prices[i] - prices[i - 1]) * (prices[i - 1] - prices[i - 2] if i > 1 else 0)
+        < 0
     )
-    assert direction_changes >= 1, f"Whipsaw should produce direction changes, got {direction_changes}"
+    assert (
+        direction_changes >= 1
+    ), f"Whipsaw should produce direction changes, got {direction_changes}"
 
 
 @pytest.mark.asyncio
@@ -263,15 +276,18 @@ async def test_hft_noise_burst(exchange, config):
     max_dev = max(deviations)
     # Each tick's noise is gauss(0, 50_000 * 3/10_000) = gauss(0, 15)
     # Max deviation should be within that range
-    assert max_dev < 50_000.0 * 0.002, f"HFT noise should be tiny, max dev was {max_dev}"
+    assert (
+        max_dev < 50_000.0 * 0.002
+    ), f"HFT noise should be tiny, max dev was {max_dev}"
 
 
 # ── 4. Execution Metrics Tests ──────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_execution_metrics_rejection_rate(exchange, config):
     """Metrics should correctly record rejection rate."""
-    config.random_rejection_rate = 0.5   # 50% rejection
+    config.random_rejection_rate = 0.5  # 50% rejection
     config.rejection_rate_mult = 1.0
     r = MarketRealismEngine(exchange, config)
 
@@ -285,7 +301,9 @@ async def test_execution_metrics_rejection_rate(exchange, config):
             rejections += 1
 
     summary = r.metrics.get_summary()
-    assert summary["n_rejected"] >= 5, f"Expected ~50% rejection, got {summary['n_rejected']}/20"
+    assert (
+        summary["n_rejected"] >= 5
+    ), f"Expected ~50% rejection, got {summary['n_rejected']}/20"
 
 
 @pytest.mark.asyncio
@@ -346,10 +364,15 @@ async def test_execution_metrics_percentiles(exchange, config):
     m = ExecutionMetrics()
     for i in range(100):
         m.record(
-            order_id=f"t{i}", symbol="BTC/USDT", side="buy",
-            order_type="market", requested_price=50_000.0,
-            expected_fill=50_000.0, actual_fill=50_000.0 + i,
-            slippage_bps=float(i), latency_ms=float(i),
+            order_id=f"t{i}",
+            symbol="BTC/USDT",
+            side="buy",
+            order_type="market",
+            requested_price=50_000.0,
+            expected_fill=50_000.0,
+            actual_fill=50_000.0 + i,
+            slippage_bps=float(i),
+            latency_ms=float(i),
         )
     s = m.get_summary()
     assert 49 <= s["p50_slippage_bps"] <= 51
@@ -358,6 +381,7 @@ async def test_execution_metrics_percentiles(exchange, config):
 
 
 # ── 5. Latency Tests ────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_latency_spike_occurs(exchange, config):
@@ -375,6 +399,7 @@ async def test_latency_spike_occurs(exchange, config):
     latencies = []
     for _ in range(30):
         import time
+
         t0 = time.monotonic()
         try:
             await r.place_market_order("BTC/USDT", "buy", 0.001)
@@ -399,13 +424,16 @@ async def test_latency_regime_adds_delay(exchange, config):
     config.enable_delayed_fills = False
     config.enable_volatility_regimes = True
     config.enable_adversarial = False
-    config.random_rejection_rate = 0.0  # Disable random rejection so orders always execute
+    config.random_rejection_rate = (
+        0.0  # Disable random rejection so orders always execute
+    )
     r = MarketRealismEngine(exchange, config)
 
     await r.on_price_update("BTC/USDT", 50_000.0)
     exchange._current_prices["BTC/USDT"] = 50_000.0
 
     import time
+
     t0 = time.monotonic()
     await r.place_market_order("BTC/USDT", "buy", 0.001)
     t_normal = (time.monotonic() - t0) * 1000
@@ -421,6 +449,7 @@ async def test_latency_regime_adds_delay(exchange, config):
 
 
 # ── 6. Stale Snapshot Tests ─────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_stale_snapshot_injects_flag(exchange, config):
@@ -445,6 +474,7 @@ async def test_stale_snapshot_injects_flag(exchange, config):
 
 # ── 7. OHLCV Noise Tests ───────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_ohlcv_noise_alters_close_prices(exchange, config):
     """OHLCV noise should modify candle close prices."""
@@ -460,11 +490,14 @@ async def test_ohlcv_noise_alters_close_prices(exchange, config):
 
     # High should be >= close, low should be <= close
     for c in candles:
-        assert c["high"] >= c["close"], f"High {c['high']} should be >= close {c['close']}"
+        assert (
+            c["high"] >= c["close"]
+        ), f"High {c['high']} should be >= close {c['close']}"
         assert c["low"] <= c["close"], f"Low {c['low']} should be <= close {c['close']}"
 
 
 # ── 8. Integration: Full Regime Cycle ──────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_full_regime_cycle(exchange, config):
@@ -489,11 +522,16 @@ async def test_full_regime_cycle(exchange, config):
         regime_prices[regime.name] = price
 
     # CRASH should trend down, SPIKE should trend up
-    assert regime_prices["CRASH"] < 50_000.0, f"CRASH should trend down, ended at {regime_prices['CRASH']}"
-    assert regime_prices["SPIKE"] > 50_000.0, f"SPIKE should trend up, ended at {regime_prices['SPIKE']}"
+    assert (
+        regime_prices["CRASH"] < 50_000.0
+    ), f"CRASH should trend down, ended at {regime_prices['CRASH']}"
+    assert (
+        regime_prices["SPIKE"] > 50_000.0
+    ), f"SPIKE should trend up, ended at {regime_prices['SPIKE']}"
 
 
 # ── 9. Order Book Realism: Depth and Liquidity ──────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_order_book_depth_reduces_in_crash(exchange, config):
@@ -511,11 +549,13 @@ async def test_order_book_depth_reduces_in_crash(exchange, config):
     book_crash = r._books["BTC/USDT"]
     level_qty_crash = book_crash._bid_levels[0].quantity
 
-    assert level_qty_crash < level_qty_low, \
-        f"CRASH liquidity ({level_qty_crash}) should be less than LOW ({level_qty_low})"
+    assert (
+        level_qty_crash < level_qty_low
+    ), f"CRASH liquidity ({level_qty_crash}) should be less than LOW ({level_qty_low})"
 
 
 # ── 10. PnL Degradation Under Stress ────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_pnl_degradation_under_adversarial_regime(exchange, config):
@@ -548,8 +588,9 @@ async def test_pnl_degradation_under_adversarial_regime(exchange, config):
 
     summary = r.metrics.get_summary()
     # CRASH regime in thin book should produce elevated slippage
-    assert summary["avg_slippage_bps"] > 2.0, \
-        f"CRASH regime should produce above-baseline slippage, got {summary['avg_slippage_bps']} bps"
+    assert (
+        summary["avg_slippage_bps"] > 2.0
+    ), f"CRASH regime should produce above-baseline slippage, got {summary['avg_slippage_bps']} bps"
 
 
 if __name__ == "__main__":

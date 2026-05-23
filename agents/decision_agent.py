@@ -64,7 +64,12 @@ class AIDecisionAgent:
                 elapsed = (now - self._last_decision_at).total_seconds()
                 if elapsed < self._min_decision_interval_seconds:
                     log.debug("decision_throttled", seconds_elapsed=elapsed)
-                    return {"action": "HOLD", "confidence": 0.5, "reasoning": "throttled", "throttled": True}
+                    return {
+                        "action": "HOLD",
+                        "confidence": 0.5,
+                        "reasoning": "throttled",
+                        "throttled": True,
+                    }
 
             snapshot = market_snapshot
             indicators = snapshot.get("indicators", {})
@@ -73,10 +78,15 @@ class AIDecisionAgent:
             price_delta_threshold_pct = 0.5
             if self._last_decision_price:
                 price_pct_change = abs(
-                    (snapshot["price"] - self._last_decision_price) / self._last_decision_price * 100
+                    (snapshot["price"] - self._last_decision_price)
+                    / self._last_decision_price
+                    * 100
                 )
                 if price_pct_change < price_delta_threshold_pct:
-                    log.debug("decision_skipped_price_unchanged", price_change_pct=price_pct_change)
+                    log.debug(
+                        "decision_skipped_price_unchanged",
+                        price_change_pct=price_pct_change,
+                    )
                     return {
                         "action": "HOLD",
                         "confidence": 0.5,
@@ -176,7 +186,11 @@ Return ONLY the JSON object."""
 
         # Validate confidence
         if confidence < MIN_CONFIDENCE:
-            log.info("ai_confidence_below_threshold", confidence=confidence, min=MIN_CONFIDENCE)
+            log.info(
+                "ai_confidence_below_threshold",
+                confidence=confidence,
+                min=MIN_CONFIDENCE,
+            )
             return {
                 "action": "HOLD",
                 "confidence": confidence,
@@ -184,7 +198,9 @@ Return ONLY the JSON object."""
             }
 
         # Validate indicators not empty
-        if not indicators or all(v is None or (isinstance(v, float) and v == 0) for v in indicators.values()):
+        if not indicators or all(
+            v is None or (isinstance(v, float) and v == 0) for v in indicators.values()
+        ):
             log.warning("ai_indicators_empty")
             return {
                 "action": "HOLD",

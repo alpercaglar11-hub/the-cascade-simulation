@@ -42,7 +42,9 @@ class TradingLoop:
         self._redis_client = redis_client
         self._running = True
         self._task = asyncio.create_task(self._run())
-        log.info("trading_loop_started", interval_seconds=self._interval, symbol=self._symbol)
+        log.info(
+            "trading_loop_started", interval_seconds=self._interval, symbol=self._symbol
+        )
 
     async def stop(self) -> None:
         """
@@ -120,7 +122,9 @@ class TradingLoop:
                 market_snapshot_age=snapshot_age,
             )
 
-            cycle_duration_ms = (datetime.now(timezone.utc) - decision_cycle_start).total_seconds() * 1000
+            cycle_duration_ms = (
+                datetime.now(timezone.utc) - decision_cycle_start
+            ).total_seconds() * 1000
             log.info(
                 "tick_execution_result",
                 accepted=result.accepted,
@@ -161,7 +165,9 @@ class TradingLoop:
             positions = await execution_engine.get_open_positions()
             for pos in positions:
                 ticker = await market_data_engine.get_market_snapshot()
-                log.debug("position_updated", symbol=pos["symbol"], price=ticker["price"])
+                log.debug(
+                    "position_updated", symbol=pos["symbol"], price=ticker["price"]
+                )
         except Exception as e:
             log.error("position_update_error", error=str(e))
 

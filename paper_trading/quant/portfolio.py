@@ -22,12 +22,13 @@ from paper_trading.quant.stats import PerformanceStats
 @dataclass
 class StrategyAllocation:
     """A single strategy's allocation within the portfolio."""
+
     strategy_id: str
     strategy_name: str
-    weight: float                    # 0.0–1.0
+    weight: float  # 0.0–1.0
     sharpe: float = 0.0
-    correlation: float = 0.0         # correlation to portfolio
-    exposure: float = 0.0            # notional exposure
+    correlation: float = 0.0  # correlation to portfolio
+    exposure: float = 0.0  # notional exposure
     annual_return: float = 0.0
     max_drawdown: float = 0.0
 
@@ -35,9 +36,10 @@ class StrategyAllocation:
 @dataclass
 class PortfolioConfig:
     """Configuration for the portfolio layer."""
+
     max_strategies: int = 5
-    min_weight: float = 0.05         # minimum allocation per strategy
-    max_weight: float = 0.60         # maximum allocation per strategy
+    min_weight: float = 0.05  # minimum allocation per strategy
+    max_weight: float = 0.60  # maximum allocation per strategy
     correlation_threshold: float = 0.75  # max correlation between any two strategies
     target_portfolio_sharpe: float = 1.0  # for Kelly-based sizing
 
@@ -45,6 +47,7 @@ class PortfolioConfig:
 @dataclass
 class PortfolioResult:
     """Output from portfolio construction."""
+
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     allocations: list[StrategyAllocation] = field(default_factory=list)
     portfolio_sharpe: float = 0.0
@@ -126,12 +129,22 @@ class PortfolioBuilder:
                 constrained_weights[sid] = w
 
         # Redistribute excess proportionally among mid-range strategies
-        n_mid = sum(1 for w in constrained_weights.values() if self._cfg.min_weight <= w <= self._cfg.max_weight)
+        n_mid = sum(
+            1
+            for w in constrained_weights.values()
+            if self._cfg.min_weight <= w <= self._cfg.max_weight
+        )
         if n_mid > 0 and excess > 0:
             per_strat = excess / n_mid
             for sid in list(constrained_weights):
-                if self._cfg.min_weight <= constrained_weights[sid] <= self._cfg.max_weight:
-                    constrained_weights[sid] = min(constrained_weights[sid] + per_strat, self._cfg.max_weight)
+                if (
+                    self._cfg.min_weight
+                    <= constrained_weights[sid]
+                    <= self._cfg.max_weight
+                ):
+                    constrained_weights[sid] = min(
+                        constrained_weights[sid] + per_strat, self._cfg.max_weight
+                    )
 
         # ── 5. Build allocations ─────────────────────────────────────────────────
         selected_ids = set()
@@ -154,13 +167,19 @@ class PortfolioBuilder:
         sharpes = np.array([a.sharpe for a in allocations])
         rets = np.array([a.annual_return for a in allocations])
         dds = np.array([a.max_drawdown for a in allocations])
-        vols = np.array([getattr(s, "annualized_volatility", 0.1) for s in strategy_stats if s.run_id in constrained_weights])
+        vols = np.array(
+            [
+                getattr(s, "annualized_volatility", 0.1)
+                for s in strategy_stats
+                if s.run_id in constrained_weights
+            ]
+        )
 
         # Weighted average portfolio metrics
         port_sharpe = float(np.dot(weights_arr, sharpes))
         port_return = float(np.dot(weights_arr, rets))
         # Portfolio vol via weighted correlation (simplified — assume zero corr for now)
-        port_vol = float(np.sqrt(np.dot(weights_arr ** 2, vols ** 2)))
+        port_vol = float(np.sqrt(np.dot(weights_arr**2, vols**2)))
         port_dd = float(np.dot(weights_arr, dds))
 
         rejected = [s.run_id for s in strategy_stats if s.run_id not in selected_ids]
@@ -172,12 +191,18 @@ class PortfolioBuilder:
             portfolio_return=round(port_return, 4),
             portfolio_volatility=round(port_vol, 4),
             portfolio_max_dd=round(port_dd, 4),
-            diversification_ratio=round(1.0 - float(np.mean([a.correlation for a in allocations])), 3),
+            diversification_ratio=round(
+                1.0 - float(np.mean([a.correlation for a in allocations])), 3
+            ),
             selected_strategies=[s.strategy_name for s in allocations],
-            rejected_strategies=[s.strategy_name for s in strategy_stats if s.run_id in rejected],
+            rejected_strategies=[
+                s.strategy_name for s in strategy_stats if s.run_id in rejected
+            ],
         )
 
-    def _correlation_filter(self, ranked_strategies: list[PerformanceStats]) -> list[PerformanceStats]:
+    def _correlation_filter(
+        self, ranked_strategies: list[PerformanceStats]
+    ) -> list[PerformanceStats]:
         """
         Greedy correlation filtering:
         Keep highest-ranked strategy, then skip any strategy with
@@ -211,8 +236,12 @@ class PortfolioBuilder:
         if not all_regimes:
             return 0.0
 
-        vec1 = np.array([r1.get(r, {}).get("win_rate", 0.5) for r in sorted(all_regimes)])
-        vec2 = np.array([r2.get(r, {}).get("win_rate", 0.5) for r in sorted(all_regimes)])
+        vec1 = np.array(
+            [r1.get(r, {}).get("win_rate", 0.5) for r in sorted(all_regimes)]
+        )
+        vec2 = np.array(
+            [r2.get(r, {}).get("win_rate", 0.5) for r in sorted(all_regimes)]
+        )
 
         if np.std(vec1) < 1e-9 or np.std(vec2) < 1e-9:
             return 0.0
@@ -224,7 +253,10 @@ class PortfolioBuilder:
 
 # ── Correlation Matrix Builder ──────────────────────────────────────────────────
 
-def build_correlation_matrix(strategy_stats: list[PerformanceStats]) -> tuple[list[str], np.ndarray]:
+
+def build_correlation_matrix(
+    strategy_stats: list[PerformanceStats],
+) -> tuple[list[str], np.ndarray]:
     """
     Build a Pearson correlation matrix from strategy returns (via regime win-rate proxy).
     Returns (strategy_names, correlation_matrix).
@@ -254,6 +286,8 @@ def build_correlation_matrix(strategy_stats: list[PerformanceStats]) -> tuple[li
                 matrix[i, j] = 0.0 if i != j else 1.0
             else:
                 c = np.corrcoef(vec_i, vec_j)
-                matrix[i, j] = float(c[0, 1]) if c.shape == (2, 2) else (1.0 if i == j else 0.0)
+                matrix[i, j] = (
+                    float(c[0, 1]) if c.shape == (2, 2) else (1.0 if i == j else 0.0)
+                )
 
     return names, matrix

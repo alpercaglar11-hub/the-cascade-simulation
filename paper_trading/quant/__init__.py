@@ -34,7 +34,12 @@ from paper_trading.quant.interface import (
     Parameter,
     Signal,
     SignalType,
-    sma, ema, rsi, atr, bollinger_bands, momentum,
+    sma,
+    ema,
+    rsi,
+    atr,
+    bollinger_bands,
+    momentum,
 )
 from paper_trading.quant.research import ResearchEnvironment, SweepResult, ParameterSet
 from paper_trading.quant.stats import (
@@ -64,18 +69,38 @@ from paper_trading.quant.portfolio import (
 
 __all__ = [
     # Interface
-    "BaseStrategy", "Parameter", "Signal", "SignalType",
-    "sma", "ema", "rsi", "atr", "bollinger_bands", "momentum",
+    "BaseStrategy",
+    "Parameter",
+    "Signal",
+    "SignalType",
+    "sma",
+    "ema",
+    "rsi",
+    "atr",
+    "bollinger_bands",
+    "momentum",
     # Research
-    "ResearchEnvironment", "SweepResult", "ParameterSet",
+    "ResearchEnvironment",
+    "SweepResult",
+    "ParameterSet",
     # Stats
-    "PerformanceStats", "EquityCurve", "TradeRecord",
-    "StatsCalculator", "MonteCarloEngine", "MonteCarloResult",
+    "PerformanceStats",
+    "EquityCurve",
+    "TradeRecord",
+    "StatsCalculator",
+    "MonteCarloEngine",
+    "MonteCarloResult",
     # Regime
-    "RegimeType", "RegimeDetector", "RegimePerformanceTracker",
+    "RegimeType",
+    "RegimeDetector",
+    "RegimePerformanceTracker",
     # Anti-overfit
-    "AntiOverfitEngine", "StabilityReport", "bootstrap_stability",
+    "AntiOverfitEngine",
+    "StabilityReport",
+    "bootstrap_stability",
     # Portfolio
-    "PortfolioBuilder", "PortfolioConfig", "PortfolioResult",
+    "PortfolioBuilder",
+    "PortfolioConfig",
+    "PortfolioResult",
     "build_correlation_matrix",
 ]

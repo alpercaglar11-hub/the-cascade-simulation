@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import asyncio
 import itertools
-import math
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -39,19 +38,28 @@ import numpy as np
 
 from paper_trading.quant.interface import BaseStrategy, Signal, SignalType
 from paper_trading.quant.stats import (
-    EquityCurve, PerformanceStats, StatsCalculator, TradeRecord,
-    MonteCarloEngine, MonteCarloResult,
+    EquityCurve,
+    PerformanceStats,
+    StatsCalculator,
+    TradeRecord,
+    MonteCarloEngine,
+    MonteCarloResult,
 )
-from paper_trading.quant.regime import RegimeDetector, RegimePerformanceTracker, RegimeType
+from paper_trading.quant.regime import (
+    RegimeDetector,
+    RegimePerformanceTracker,
+    RegimeType,
+)
 from paper_trading.quant.anti_overfit import AntiOverfitEngine, StabilityReport
 from paper_trading.quant.portfolio import PortfolioBuilder, PortfolioResult
 
-
 # ── Parameter Sweep ─────────────────────────────────────────────────────────────
+
 
 @dataclass
 class ParameterSet:
     """A single parameter combination within a sweep."""
+
     params: dict
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     stats: Optional[PerformanceStats] = None
@@ -64,6 +72,7 @@ class ParameterSet:
 @dataclass
 class SweepResult:
     """Results from a full parameter sweep."""
+
     strategy_name: str
     mode: str
     n_total: int
@@ -74,6 +83,7 @@ class SweepResult:
 
 
 # ── Core Research Environment ───────────────────────────────────────────────────
+
 
 class ResearchEnvironment:
     """
@@ -145,7 +155,11 @@ class ResearchEnvironment:
 
             # ── In-sample run ───────────────────────────────────────────────────
             is_stats, is_trades, is_eq = self._run_backtest(
-                strategy_class, params, symbol, train_end=train_end, use_realism=use_realism,
+                strategy_class,
+                params,
+                symbol,
+                train_end=train_end,
+                use_realism=use_realism,
             )
             ps.stats = is_stats
             ps.equity_curve = is_eq
@@ -159,17 +173,29 @@ class ResearchEnvironment:
             oos_stats_list: list[PerformanceStats] = []
             if walk_forward:
                 oos_stats_list = self._walk_forward_oos(
-                    strategy_class, params, symbol, n_wf_windows, wf_step_pct, use_realism,
+                    strategy_class,
+                    params,
+                    symbol,
+                    n_wf_windows,
+                    wf_step_pct,
+                    use_realism,
                 )
             else:
                 oos_stats, _, _ = self._run_backtest(
-                    strategy_class, params, symbol, train_end=train_end, oos_only=True, use_realism=use_realism,
+                    strategy_class,
+                    params,
+                    symbol,
+                    train_end=train_end,
+                    oos_only=True,
+                    use_realism=use_realism,
                 )
                 if oos_stats.n_trades > 0:
                     oos_stats_list.append(oos_stats)
 
             # ── Parameter sensitivity ─────────────────────────────────────────────
-            perturbed = self._run_perturbations(strategy_class, params, symbol, param_grid, use_realism)
+            perturbed = self._run_perturbations(
+                strategy_class, params, symbol, param_grid, use_realism
+            )
 
             # ── Anti-overfit evaluation ─────────────────────────────────────────
             stability = self._anti_overfit.evaluate(is_stats, oos_stats_list, perturbed)
@@ -191,11 +217,14 @@ class ResearchEnvironment:
 
         # ── Ranking ───────────────────────────────────────────────────────────────
         ranked = [p for p in all_results if p.stats is not None]
-        ranked.sort(key=lambda p: (
-            p.stats.sharpe_ratio * 0.5
-            + p.stats.sortino_ratio * 0.3
-            - abs(p.stats.max_drawdown_pct) * 0.2
-        ), reverse=True)
+        ranked.sort(
+            key=lambda p: (
+                p.stats.sharpe_ratio * 0.5
+                + p.stats.sortino_ratio * 0.3
+                - abs(p.stats.max_drawdown_pct) * 0.2
+            ),
+            reverse=True,
+        )
 
         return SweepResult(
             strategy_name=strategy_name,
@@ -219,16 +248,23 @@ class ResearchEnvironment:
         train_end = int(len(self._candles) * (1 - oos_pct))
         for name, cls, params in strategies:
             stats, _, _ = self._run_backtest(
-                cls, params, symbol, train_end=train_end, use_realism=use_realism,
+                cls,
+                params,
+                symbol,
+                train_end=train_end,
+                use_realism=use_realism,
             )
             stats.strategy_name = name
             results.append(stats)
 
-        results.sort(key=lambda s: (
-            s.sharpe_ratio * 0.5
-            + s.sortino_ratio * 0.3
-            - abs(s.max_drawdown_pct) * 0.2
-        ), reverse=True)
+        results.sort(
+            key=lambda s: (
+                s.sharpe_ratio * 0.5
+                + s.sortino_ratio * 0.3
+                - abs(s.max_drawdown_pct) * 0.2
+            ),
+            reverse=True,
+        )
         return results
 
     def build_portfolio(
@@ -253,9 +289,16 @@ class ResearchEnvironment:
         """
         Run a single backtest. Uses asyncio.run() to handle async exchange.
         """
-        return asyncio.run(self._run_backtest_async(
-            strategy_class, params, symbol, train_end, oos_only, use_realism,
-        ))
+        return asyncio.run(
+            self._run_backtest_async(
+                strategy_class,
+                params,
+                symbol,
+                train_end,
+                oos_only,
+                use_realism,
+            )
+        )
 
     async def _run_backtest_async(
         self,
@@ -306,7 +349,13 @@ class ResearchEnvironment:
             # Execute actionable signals
             if signal and signal.is_actionable():
                 await self._execute_signal_async(
-                    signal, position, trades, regime_tracker, global_idx, current_time, symbol,
+                    signal,
+                    position,
+                    trades,
+                    regime_tracker,
+                    global_idx,
+                    current_time,
+                    symbol,
                 )
 
             # Check SL/TP on open position
@@ -314,14 +363,48 @@ class ResearchEnvironment:
                 pos = position[symbol]
                 sl = pos.get("stop_loss")
                 tp = pos.get("take_profit")
-                if sl and (pos["side"] == "long" and price <= sl or pos["side"] == "short" and price >= sl):
-                    await self._close_position_async(symbol, position, trades, regime_tracker, global_idx, current_time, "sl")
-                elif tp and (pos["side"] == "long" and price >= tp or pos["side"] == "short" and price <= tp):
-                    await self._close_position_async(symbol, position, trades, regime_tracker, global_idx, current_time, "tp")
+                if sl and (
+                    pos["side"] == "long"
+                    and price <= sl
+                    or pos["side"] == "short"
+                    and price >= sl
+                ):
+                    await self._close_position_async(
+                        symbol,
+                        position,
+                        trades,
+                        regime_tracker,
+                        global_idx,
+                        current_time,
+                        "sl",
+                    )
+                elif tp and (
+                    pos["side"] == "long"
+                    and price >= tp
+                    or pos["side"] == "short"
+                    and price <= tp
+                ):
+                    await self._close_position_async(
+                        symbol,
+                        position,
+                        trades,
+                        regime_tracker,
+                        global_idx,
+                        current_time,
+                        "tp",
+                    )
 
         # Close any open position at end of backtest
         if symbol in position:
-            await self._close_position_async(symbol, position, trades, regime_tracker, global_idx, current_time, "eob")
+            await self._close_position_async(
+                symbol,
+                position,
+                trades,
+                regime_tracker,
+                global_idx,
+                current_time,
+                "eob",
+            )
 
         strategy.on_reset()
         regime_tracker.reset()
@@ -329,8 +412,12 @@ class ResearchEnvironment:
         # Build equity curve
         timestamps = [c.get("timestamp", datetime.utcnow()) for c in bars]
         prices = [float(c["close"]) for c in bars]
-        eq = EquityCurve.from_trades(trades, self._initial_capital, timestamps, prices, self._fee_bps)
-        stats = self._stats_calc.compute(eq, trades, strategy_name=strategy_class.__name__)
+        eq = EquityCurve.from_trades(
+            trades, self._initial_capital, timestamps, prices, self._fee_bps
+        )
+        stats = self._stats_calc.compute(
+            eq, trades, strategy_name=strategy_class.__name__
+        )
 
         return stats, trades, eq
 
@@ -348,11 +435,15 @@ class ResearchEnvironment:
         # Determine action from signal type
         if signal.type == SignalType.CLOSE_LONG:
             if symbol in position and position[symbol]["side"] == "long":
-                await self._close_position_async(symbol, position, trades, regime_tracker, bar, timestamp, "signal")
+                await self._close_position_async(
+                    symbol, position, trades, regime_tracker, bar, timestamp, "signal"
+                )
             return
         if signal.type == SignalType.CLOSE_SHORT:
             if symbol in position and position[symbol]["side"] == "short":
-                await self._close_position_async(symbol, position, trades, regime_tracker, bar, timestamp, "signal")
+                await self._close_position_async(
+                    symbol, position, trades, regime_tracker, bar, timestamp, "signal"
+                )
             return
         if signal.type == SignalType.HOLD:
             return
@@ -362,8 +453,12 @@ class ResearchEnvironment:
         # Close opposing position first
         if symbol in position:
             pos_side = position[symbol]["side"]
-            if (pos_side == "long" and action == "sell") or (pos_side == "short" and action == "buy"):
-                await self._close_position_async(symbol, position, trades, regime_tracker, bar, timestamp, "reversal")
+            if (pos_side == "long" and action == "sell") or (
+                pos_side == "short" and action == "buy"
+            ):
+                await self._close_position_async(
+                    symbol, position, trades, regime_tracker, bar, timestamp, "reversal"
+                )
 
         if symbol in position:
             return  # position still open
@@ -401,9 +496,13 @@ class ResearchEnvironment:
 
         try:
             if pos["side"] == "long":
-                result = await self._exchange.place_market_order(symbol, "sell", pos["size"])
+                result = await self._exchange.place_market_order(
+                    symbol, "sell", pos["size"]
+                )
             else:
-                result = await self._exchange.place_market_order(symbol, "buy", pos["size"])
+                result = await self._exchange.place_market_order(
+                    symbol, "buy", pos["size"]
+                )
             exit_price = result.get("fill_price", pos["entry_price"])
         except Exception:
             exit_price = pos["entry_price"]
@@ -423,7 +522,11 @@ class ResearchEnvironment:
             exit_price=exit_price,
             size=pos["size"],
             pnl=pnl,
-            pnl_pct=pnl / (pos["entry_price"] * pos["size"]) if pos["entry_price"] > 0 else 0.0,
+            pnl_pct=(
+                pnl / (pos["entry_price"] * pos["size"])
+                if pos["entry_price"] > 0
+                else 0.0
+            ),
             duration_ticks=bar - pos["entry_bar"],
         )
         regime_tracker.record_trade(trade)
@@ -432,7 +535,10 @@ class ResearchEnvironment:
     # ── Helpers ─────────────────────────────────────────────────────────────────
 
     def _build_param_combinations(
-        self, param_grid: dict[str, list], mode: str, n_random: int,
+        self,
+        param_grid: dict[str, list],
+        mode: str,
+        n_random: int,
     ) -> list[dict]:
         if mode == "grid":
             keys = list(param_grid.keys())
@@ -440,6 +546,7 @@ class ResearchEnvironment:
             return [dict(zip(keys, c)) for c in combos]
         else:
             import random
+
             combos = []
             for _ in range(n_random):
                 combos.append({k: random.choice(v) for k, v in param_grid.items()})
@@ -461,7 +568,9 @@ class ResearchEnvironment:
             if not isinstance(base_val, (int, float)):
                 continue
             step = param_grid.get(pname, [1])
-            step_val = float(step[0]) if step and isinstance(step[0], (int, float)) else 1.0
+            step_val = (
+                float(step[0]) if step and isinstance(step[0], (int, float)) else 1.0
+            )
 
             for delta in [-step_val, step_val]:
                 perturbed = {**base_params, pname: base_val + delta}
@@ -470,7 +579,9 @@ class ResearchEnvironment:
 
                 try:
                     stats, _, _ = self._run_backtest(
-                        strategy_class, perturbed, symbol,
+                        strategy_class,
+                        perturbed,
+                        symbol,
                         train_end=int(len(self._candles) * 0.7),
                         use_realism=use_realism,
                     )
@@ -498,8 +609,12 @@ class ResearchEnvironment:
                 break
             try:
                 stats, _, _ = self._run_backtest(
-                    strategy_class, params, symbol,
-                    train_end=train_end, oos_only=True, use_realism=use_realism,
+                    strategy_class,
+                    params,
+                    symbol,
+                    train_end=train_end,
+                    oos_only=True,
+                    use_realism=use_realism,
                 )
                 if stats.n_trades > 0:
                     results.append(stats)

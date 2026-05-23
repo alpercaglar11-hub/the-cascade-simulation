@@ -12,7 +12,7 @@ import asyncio
 import numpy as np
 from datetime import datetime, timezone
 from typing import Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from collections import deque
 import json
 
@@ -28,11 +28,12 @@ _TRADE_STATS_KEY = "paper:trade_stats"
 @dataclass
 class TradeStats:
     """Snapshot of cumulative trade-level statistics."""
+
     total_trades: int = 0
     winning_trades: int = 0
     losing_trades: int = 0
-    gross_profit: float = 0.0   # sum of all positive PnLs
-    gross_loss: float = 0.0     # sum of all negative PnLs (positive number)
+    gross_profit: float = 0.0  # sum of all positive PnLs
+    gross_loss: float = 0.0  # sum of all negative PnLs (positive number)
     largest_win: float = 0.0
     largest_loss: float = 0.0
     avg_win: float = 0.0
@@ -67,7 +68,11 @@ class TradeStats:
             "win_rate": round(self.win_rate, 4),
             "gross_profit": round(self.gross_profit, 4),
             "gross_loss": round(self.gross_loss, 4),
-            "profit_factor": round(self.profit_factor, 4) if self.profit_factor != float("inf") else "inf",
+            "profit_factor": (
+                round(self.profit_factor, 4)
+                if self.profit_factor != float("inf")
+                else "inf"
+            ),
             "largest_win": round(self.largest_win, 4),
             "largest_loss": round(self.largest_loss, 4),
             "avg_win": round(self.avg_win, 4),
@@ -79,8 +84,8 @@ class TradeStats:
 @dataclass
 class EquitySnapshot:
     timestamp: datetime
-    equity: float          # total account equity (realized + unrealized)
-    realized_pnl: float     # realized PnL only
+    equity: float  # total account equity (realized + unrealized)
+    realized_pnl: float  # realized PnL only
     unrealized_pnl: float  # unrealized PnL only
     trade_id: Optional[int] = None  # which trade caused this snapshot (None = periodic)
 
@@ -137,13 +142,15 @@ class PortfolioTracker:
             raw = await self._redis.lrange(_EQUITY_CURVE_KEY, 0, -1)
             for item in raw:
                 snap = json.loads(item)
-                self._equity_curve.append(EquitySnapshot(
-                    timestamp=datetime.fromisoformat(snap["timestamp"]),
-                    equity=snap["equity"],
-                    realized_pnl=snap["realized_pnl"],
-                    unrealized_pnl=snap["unrealized_pnl"],
-                    trade_id=snap.get("trade_id"),
-                ))
+                self._equity_curve.append(
+                    EquitySnapshot(
+                        timestamp=datetime.fromisoformat(snap["timestamp"]),
+                        equity=snap["equity"],
+                        realized_pnl=snap["realized_pnl"],
+                        unrealized_pnl=snap["unrealized_pnl"],
+                        trade_id=snap.get("trade_id"),
+                    )
+                )
 
             # Load trade stats
             stats_raw = await self._redis.hgetall(_TRADE_STATS_KEY)
@@ -159,7 +166,11 @@ class PortfolioTracker:
                     avg_win=float(stats_raw.get(b"avg_win", 0) or 0),
                     avg_loss=float(stats_raw.get(b"avg_loss", 0) or 0),
                 )
-                self._current_equity = self._initial_capital + self._stats.gross_profit - self._stats.gross_loss
+                self._current_equity = (
+                    self._initial_capital
+                    + self._stats.gross_profit
+                    - self._stats.gross_loss
+                )
 
             log.info(
                 "portfolio_tracker_initialized",
@@ -172,7 +183,9 @@ class PortfolioTracker:
 
     # ── Recording ─────────────────────────────────────────────────────────────
 
-    async def record_trade_closed(self, pnl: float, trade_id: int, timestamp: Optional[datetime] = None) -> None:
+    async def record_trade_closed(
+        self, pnl: float, trade_id: int, timestamp: Optional[datetime] = None
+    ) -> None:
         """
         Record a closed trade. Updates realized PnL, stats, and equity curve.
         Called when a position is fully closed.
@@ -182,7 +195,9 @@ class PortfolioTracker:
 
             # Update realized PnL
             self._realized_pnl += pnl
-            self._current_equity = self._initial_capital + self._realized_pnl + self._unrealized_pnl
+            self._current_equity = (
+                self._initial_capital + self._realized_pnl + self._unrealized_pnl
+            )
 
             # Update trade stats
             self._stats.total_trades += 1
@@ -233,7 +248,9 @@ class PortfolioTracker:
         """
         async with self._lock:
             self._unrealized_pnl = unrealized_pnl
-            self._current_equity = self._initial_capital + self._realized_pnl + self._unrealized_pnl
+            self._current_equity = (
+                self._initial_capital + self._realized_pnl + self._unrealized_pnl
+            )
 
     async def reset(self, initial_capital: float = 10_000.0) -> None:
         """
@@ -284,7 +301,9 @@ class PortfolioTracker:
             return 0.0
 
         try:
-            equities = np.array([s.equity for s in self._equity_curve], dtype=np.float64)
+            equities = np.array(
+                [s.equity for s in self._equity_curve], dtype=np.float64
+            )
             running_max = np.maximum.accumulate(equities)
             drawdowns = (running_max - equities) / running_max
             return float(np.max(drawdowns) * 100)
@@ -308,7 +327,9 @@ class PortfolioTracker:
             return 0.0
 
         try:
-            equities = np.array([s.equity for s in self._equity_curve], dtype=np.float64)
+            equities = np.array(
+                [s.equity for s in self._equity_curve], dtype=np.float64
+            )
             # Filter out zero-equity points (shouldn't happen but protect against div by zero)
             mask = equities[:-1] > 0
             if not np.any(mask):
@@ -344,13 +365,16 @@ class PortfolioTracker:
         if not self._redis:
             return
         try:
-            data = json.dumps({
-                "timestamp": snapshot.timestamp.isoformat(),
-                "equity": snapshot.equity,
-                "realized_pnl": snapshot.realized_pnl,
-                "unrealized_pnl": snapshot.unrealized_pnl,
-                "trade_id": snapshot.trade_id,
-            }, default=str)
+            data = json.dumps(
+                {
+                    "timestamp": snapshot.timestamp.isoformat(),
+                    "equity": snapshot.equity,
+                    "realized_pnl": snapshot.realized_pnl,
+                    "unrealized_pnl": snapshot.unrealized_pnl,
+                    "trade_id": snapshot.trade_id,
+                },
+                default=str,
+            )
             await self._redis.lpush(_EQUITY_CURVE_KEY, data)
             await self._redis.ltrim(_EQUITY_CURVE_KEY, 0, self.MAX_EQUITY_CURVE - 1)
         except Exception as e:
@@ -360,17 +384,20 @@ class PortfolioTracker:
         if not self._redis:
             return
         try:
-            await self._redis.hset(_TRADE_STATS_KEY, mapping={
-                "total_trades": str(self._stats.total_trades),
-                "winning_trades": str(self._stats.winning_trades),
-                "losing_trades": str(self._stats.losing_trades),
-                "gross_profit": str(self._stats.gross_profit),
-                "gross_loss": str(self._stats.gross_loss),
-                "largest_win": str(self._stats.largest_win),
-                "largest_loss": str(self._stats.largest_loss),
-                "avg_win": str(self._stats.avg_win),
-                "avg_loss": str(self._stats.avg_loss),
-            })
+            await self._redis.hset(
+                _TRADE_STATS_KEY,
+                mapping={
+                    "total_trades": str(self._stats.total_trades),
+                    "winning_trades": str(self._stats.winning_trades),
+                    "losing_trades": str(self._stats.losing_trades),
+                    "gross_profit": str(self._stats.gross_profit),
+                    "gross_loss": str(self._stats.gross_loss),
+                    "largest_win": str(self._stats.largest_win),
+                    "largest_loss": str(self._stats.largest_loss),
+                    "avg_win": str(self._stats.avg_win),
+                    "avg_loss": str(self._stats.avg_loss),
+                },
+            )
         except Exception as e:
             log.warning("stats_persist_error", error=str(e))
 

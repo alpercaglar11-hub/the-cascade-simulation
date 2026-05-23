@@ -7,10 +7,15 @@ import sys
 def _setup():
     """Configure plain stdlib logging."""
     handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S"))
+    handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S"
+        )
+    )
     root = logging.getLogger()
     root.addHandler(handler)
     root.setLevel(logging.INFO)
+
 
 _setup()
 
@@ -36,9 +41,11 @@ class _StdlibLogProxy:
         self._lg = logger
 
     def _emit(self, level: int, msg: str, args, kwargs):
-        extras = {k: v for k, v in kwargs.items() if k not in (
-            "exc_info", "stack_info", "stacklevel", "extra"
-        )}
+        extras = {
+            k: v
+            for k, v in kwargs.items()
+            if k not in ("exc_info", "stack_info", "stacklevel", "extra")
+        }
         self._lg.log(level, msg, *args, extra=extras)
 
     def debug(self, msg, *args, **kwargs):

@@ -1,8 +1,16 @@
 """SQLAlchemy models for the trading system."""
 
 from datetime import datetime
-from decimal import Decimal
-from sqlalchemy import String, Float, Integer, Boolean, DateTime, Text, Enum as SAEnum, Index
+from sqlalchemy import (
+    String,
+    Float,
+    Integer,
+    Boolean,
+    DateTime,
+    Text,
+    Enum as SAEnum,
+    Index,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 from db.session import Base
 import enum
@@ -56,7 +64,10 @@ class Trade(Base):
     executed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    __table_args__ = (Index("idx_trades_symbol", "symbol"), Index("idx_trades_created", "created_at"))
+    __table_args__ = (
+        Index("idx_trades_symbol", "symbol"),
+        Index("idx_trades_created", "created_at"),
+    )
 
 
 class Position(Base):
@@ -92,7 +103,10 @@ class AIDecision(Base):
     rejection_reason: Mapped[str] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    __table_args__ = (Index("idx_ai_decisions_symbol", "symbol"), Index("idx_ai_decisions_created", "created_at"))
+    __table_args__ = (
+        Index("idx_ai_decisions_symbol", "symbol"),
+        Index("idx_ai_decisions_created", "created_at"),
+    )
 
 
 class OHLCV(Base):

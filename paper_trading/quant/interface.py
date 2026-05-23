@@ -16,8 +16,8 @@ from typing import Any, Optional
 
 import numpy as np
 
-
 # ── Signal Types ────────────────────────────────────────────────────────────────
+
 
 class SignalType(Enum):
     BUY = auto()
@@ -43,6 +43,7 @@ class Signal:
         timestamp: when the signal was generated
         id: unique signal identifier
     """
+
     type: SignalType
     symbol: str
     strength: float = 1.0
@@ -55,10 +56,16 @@ class Signal:
 
     def is_actionable(self) -> bool:
         """Return True if this signal requires an order placement."""
-        return self.type in (SignalType.BUY, SignalType.SELL, SignalType.CLOSE_LONG, SignalType.CLOSE_SHORT)
+        return self.type in (
+            SignalType.BUY,
+            SignalType.SELL,
+            SignalType.CLOSE_LONG,
+            SignalType.CLOSE_SHORT,
+        )
 
 
 # ── Parameter Schema ────────────────────────────────────────────────────────────
+
 
 @dataclass
 class Parameter:
@@ -69,11 +76,12 @@ class Parameter:
     - Grid/random sweep construction
     - Stability validation (param_perturbed_std)
     """
+
     name: str
     default: Any
     min: Optional[float] = None
     max: Optional[float] = None
-    step: Optional[float] = None   # for grid sweeps
+    step: Optional[float] = None  # for grid sweeps
     description: str = ""
 
     def __post_init__(self):
@@ -98,6 +106,7 @@ class Parameter:
 
 
 # ── Strategy Interface ─────────────────────────────────────────────────────────
+
 
 class BaseStrategy(ABC):
     """
@@ -200,6 +209,7 @@ class BaseStrategy(ABC):
 
 # ── Common Indicator Helpers ────────────────────────────────────────────────────
 
+
 def sma(closes: np.ndarray, period: int) -> float:
     if len(closes) < period:
         return np.nan
@@ -209,7 +219,7 @@ def sma(closes: np.ndarray, period: int) -> float:
 def ema(closes: np.ndarray, period: int) -> float:
     if len(closes) < period:
         return np.nan
-    return float(np.convolve(closes, np.ones(period)/period, mode="valid")[-1])
+    return float(np.convolve(closes, np.ones(period) / period, mode="valid")[-1])
 
 
 def rsi(closes: np.ndarray, period: int = 14) -> float:
@@ -226,7 +236,9 @@ def rsi(closes: np.ndarray, period: int = 14) -> float:
     return round(100.0 - 100.0 / (1.0 + rs), 2)
 
 
-def atr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14) -> float:
+def atr(
+    highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14
+) -> float:
     if len(highs) < period + 1:
         return np.nan
     high_low = highs[1:] - lows[1:]
@@ -236,7 +248,9 @@ def atr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 1
     return float(np.mean(tr[-period:]))
 
 
-def bollinger_bands(closes: np.ndarray, period: int = 20, std_dev: float = 2.0) -> tuple[float, float, float]:
+def bollinger_bands(
+    closes: np.ndarray, period: int = 20, std_dev: float = 2.0
+) -> tuple[float, float, float]:
     if len(closes) < period:
         return np.nan, np.nan, np.nan
     band = closes[-period:]
