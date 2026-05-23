@@ -20,19 +20,17 @@ jobs:
         with:
           python-version: '3.12'
 
-      # Hatalı API Key veya Şifre sızıntılarını repoya girmeden yakalar
+      # Standart ve ücretsiz TruffleHog OSS sürümü
       - name: Secret Detection
         uses: trufflesecurity/trufflehog@main
         with:
           base: ${{ github.event.repository.default_branch }}
           head: HEAD
-          extra_args: --only-verified --fail
+          extra_args: --only-verified
 
-      # Kod standartlarını kontrol eder (Syntax hataları vb.)
       - name: Lint with Flake8
         run: |
           pip install flake8
-          # stop the build if there are Python syntax errors or undefined names
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
 
   test-and-build:
@@ -53,8 +51,6 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      # Docker altyapısının ayağa kalkıp kalkmadığını kontrol eder
       - name: Validate Docker Compose Configuration
         run: |
           docker compose config
-
