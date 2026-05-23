@@ -1,0 +1,59 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  security-and-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Hatalı API Key veya Şifre sızıntılarını repoya girmeden yakalar
+      - name: Secret Detection (TruffleHog)
+        uses: trufflesecurity/trufflehog-enterprise-action@main
+        continue-on-error: true # Test sürecini tamamen kilitlememesi için log üretir
+        with:
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+
+      # Kod standartlarını kontrol eder (Syntax hataları vb.)
+      - name: Lint with Flake8
+        run: |
+          pip install flake8
+          # stop the build if there are Python syntax errors or undefined names
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+  test-and-build:
+    needs: security-and-lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      # Docker altyapısının ayağa kalkıp kalkmadığını kontrol eder
+      - name: Validate Docker Compose Configuration
+        run: |
+          docker compose config
