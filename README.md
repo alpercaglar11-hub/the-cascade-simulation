@@ -1,5 +1,7 @@
 # The Cascade — Distributed Systems Recovery Dynamics
 
+![CI Pipeline](https://github.com/alpercaglar11-hub/the-cascade-simulation/actions/workflows/ci.yml/badge.svg)
+
 > **An experimental platform for studying congestion propagation, retry storms, and recovery behavior in distributed coordination systems.**
 
 Built for systems engineers and researchers who want to observe, measure, and reproduce distributed coordination failures under controlled, deterministic conditions.
