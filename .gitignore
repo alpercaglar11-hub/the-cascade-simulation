@@ -1,0 +1,62 @@
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+ENV/
+.env
+
+# OS
+.DS_Store
+desktop.ini
+._*
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Grafana/dashboard JSON (large, tracked)
+# monitoring/grafana/provisioning/dashboards/*.json
+
+# Prometheus configs
+# monitoring/
+
+# Simulation configs
+# configs/
+
+# Experiments — monte carlo batch data (heavy)
+experiments/monte_carlo/batch_*/
+experiments/monte_carlo/batch_20/
+experiments/monte_carlo/batch_*/
+experiments/reports/*.md
+
+# Large data directories
+metrics/
+metrics_replay2/
+metrics_test/
+replays/
+media/
+reports/
+docs/
+
+# Artifacts
+*.raw
+*.wav
+*.mp4
+*.mp3
+*.h264
+*.hevc
+*.y4m
+
+# Test / temp
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+tmp/
+temp/
+.cache/
