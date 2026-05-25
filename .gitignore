@@ -26,13 +26,18 @@ Thumbs.db
 # monitoring/
 
 # Simulation configs
-# configs/
+configs/
 
 # Experiments — monte carlo batch data (heavy)
 experiments/monte_carlo/batch_*/
 experiments/monte_carlo/batch_20/
 experiments/monte_carlo/batch_*/
+experiments/batch_*/
+experiments/experiment_*/
+experiments/topology_benchmarks/
 experiments/reports/*.md
+experiments/__pycache__/
+experiments/*.pyc
 
 # Large data directories
 metrics/
