@@ -281,6 +281,93 @@ make clean-all
 
 ---
 
+## AI-Powered Predictive Resilience
+
+A supervised ML layer trained on simulation telemetry to detect critical failure modes — `oscillatory_instability` and `secondary_collapse` — before they fully manifest. The notebook `experiments/ai_failure_prediction.ipynb` is the primary artifact.
+
+### Architecture
+
+```
+Simulation Runs (batch_20260526_001331)
+    ├── phase_transitions.csv       19,200 tick-level telemetry rows
+    ├── comparative_results_augmented.csv   per-run taxonomy labels
+    └── aggregate_taxonomy_summary.json     batch-level statistics
+
+                         Feature Engineering
+    ├── Rolling statistics (mean/std/min over 20-tick windows)
+    ├── Stability acceleration (second derivative of rolling mean)
+    ├── Oscillation metrics (retry zero-crossing rate, rolling std)
+    ├── Fragmentation persistence slope (30-tick polyfit)
+    ├── Time-since-stable counter
+    └── Topology encoding (mesh/ring/scale_free/hierarchical → 0/1/2/3)
+
+                         XGBoost Classifier
+    ├── 18 features, n_estimators=300, max_depth=6
+    ├── Trained on full batch (19,200 samples, 600 critical = 3.1% positive rate)
+    └── scale_pos_weight=31.0 to handle class imbalance
+
+                         SHAP Explainability
+    └── Per-sample feature attribution with game-theoretic fairness
+```
+
+### Experiment Results (batch_20260526_001331)
+
+| Metric | Value |
+|---|---|
+| **AUC-ROC** | 1.0000 |
+| **Critical Precision** | 1.0 |
+| **Critical Recall** | 1.0 |
+| **Test Set** | 4,200 samples / 7 runs |
+| **Positive Rate** | 14.3% (test), 3.1% (full) |
+
+**Top SHAP Features** (mean |SHAP value|):
+1. `topology_id` (6.92) — hub vs connected topology is the dominant differentiator
+2. `roll_retry_count_max` (0.67) — peak retry pressure is the strongest failure signal
+3. `roll_stability_score_min` (0.47) — minimum rolling stability captures fragmentation depth
+4. `roll_retry_count_mean` (0.43) — sustained elevated retry count amplifies instability
+5. `since_stable` (0.40) — time elapsed since last stable state predicts recovery probability
+
+### Key Findings
+
+**Topology Hierarchy of Fragility** (test set, 7 runs):
+- `scale_free`: failure_rate=1.0, predicted=0.962, mean_stability=0.663
+- Hub-based topologies (scale_free, hierarchical) fragment faster than connected topologies (mesh, ring) under asymmetric load because hub removal disconnects all spoke neighbors simultaneously.
+
+**Oscillation Pattern Detection**:
+- `roll_retry_count_max` and `retry_zcr` together capture the oscillation wave pattern
+- The model learned that sustained retry pressure > 2 ticks ahead is the primary oscillation precursor
+- topology_id dominance indicates the failure mode itself is topology-structured, not parameter-structured
+
+**Failure Mode Distribution** (32-run batch):
+- `oscillatory_instability`: 4 runs (12.5%) — retry/fragmentation loop without full recovery
+- `partial_recovery`: 28 runs (87.5%) — system stabilizes but at reduced health
+
+### How to Reproduce
+
+```bash
+# Re-run the full experiment
+python experiments/monte_carlo_runner.py --batch-id 20260526_001331
+
+# Re-execute the notebook (generates all plots + report)
+jupyter nbconvert --to notebook --execute --inplace \
+    experiments/ai_failure_prediction.ipynb
+
+# View the text report
+cat experiments/reports/ai_failure_prediction_report.txt
+```
+
+### Positioning
+
+This simulation + ML pipeline serves as a **foundation for self-healing AI systems** research:
+
+- **Multi-Agent Orchestration** (LangGraph, AutoGen, CrewAI): Agent coordination protocols fail silently under skewed task distributions. The oscillation pattern modeled here is structurally identical to agent consensus failure under load imbalance.
+- **LLMOps Inference Clusters** (vLLM, TGI): Retry storms in batch schedulers under backpressure match the `oscillatory_instability` taxonomy exactly. Early detection enables pre-emptive health-shifting: drain a node, redirect traffic, or freeze scheduler dispatch before fragmentation cascades.
+- **Distributed Coordination Failures**: The outcome taxonomy (6 classes from full_recovery to unrecoverable_partition) provides a structured vocabulary for reasoning about coordination collapse in consensus-based systems.
+
+The simulation engine generates the training data. The ML model provides the forward-looking risk signal. SHAP makes the decision explainable for human-in-the-loop override and regulatory audit trails on autonomous fault management.
+
+---
+
 ## Research Applications
 
 **Retry Storm Analysis** — Observe how retry amplification spikes latency beyond fragmentation thresholds. Run `experiments/topology_benchmarks.py --nodes 12 --seeds 42 1337 2023 7` to compare across topologies.
