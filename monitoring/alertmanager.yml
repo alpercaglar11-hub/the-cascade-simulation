@@ -1,0 +1,40 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ["alertname", "severity"]
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: cascade-alerts
+  routes:
+    - match:
+        severity: critical
+      receiver: cascade-critical
+      continue: true
+    - match:
+        alertname: CascadeRetryStormElevated
+      receiver: cascade-retry-storm
+    - match:
+        alertname: CascadeFragmentationMass
+      receiver: cascade-critical
+
+receivers:
+  - name: cascade-alerts
+    webhook_configs:
+      - url: http://simulation-engine:9090/health  # engineering hook
+        send_resolved: true
+  - name: cascade-critical
+    webhook_configs:
+      - url: http://simulation-engine:9090/health
+        send_resolved: true
+  - name: cascade-retry-storm
+    webhook_configs:
+      - url: http://simulation-engine:9090/health
+
+inhibit_rules:
+  - source_match:
+      severity: critical
+    target_match:
+      severity: warning
+    equal: ["alertname"]

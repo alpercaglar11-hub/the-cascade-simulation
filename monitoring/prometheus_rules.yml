@@ -1,0 +1,127 @@
+# ─── Cascade Resilience Intelligence — Prometheus Recording Rules ─────────────
+# Add to prometheus.yml under rule_files:, or load via prometheus rules API.
+# These rules pre-compute common expensive queries for Grafana dashboards.
+#
+# Usage:
+#   groups:
+#     - import: cascade_resilience_rules.yml
+
+groups:
+  - name: cascade_resilience
+    interval: 30s
+    rules:
+      # Recovery success rate (% of runs that are full or partial recovery)
+      - record: cascade:recovery_success_rate:ratio
+        expr: |
+          sum(cascade_outcome_total{outcome=~"full_recovery|partial_recovery"})
+          / sum(cascade_outcome_total)
+
+      # Mean final stability score (by topology)
+      - record: cascade:topology:final_stability_mean
+        expr: avg by (topology, batch_id) (cascade_final_stability_score)
+
+      # Mean final health score (by topology)
+      - record: cascade:topology:final_health_mean
+        expr: avg by (topology, batch_id) (cascade_final_health_score)
+
+      # Fragmentation peak statistics (by outcome)
+      - record: cascade:outcome:frag_peak_mean
+        expr: avg by (outcome) (cascade_fragmentation_peak)
+
+      # Recovery convergence slope statistics (by outcome)
+      - record: cascade:outcome:recovery_slope_mean
+        expr: avg by (outcome) (cascade_recovery_convergence_slope)
+
+      # Oscillation frequency (% of runs with oscillations > 0)
+      - record: cascade:oscillation_frequency:ratio
+        expr: |
+          count(cascade_oscillation_count > 0)
+          / count(cascade_oscillation_count)
+
+      # Phase transition rates per phase
+      - record: cascade:phase_transitions_per_run
+        expr: |
+          sum by (to_phase) (increase(cascade_phase_transition_total[1h]))
+          / (sum(increase(cascade_outcome_total[1h])) + 0.001)
+
+      # Topology resilience rank (lower = more resilient)
+      - record: cascade:topology:resilience_rank
+        expr: |
+          rank(avg by (topology) (cascade_final_health_score))
+
+      # Retry amplification factor distribution (by topology)
+      - record: cascade:topology:retry_amp_p95
+        expr: |
+          quantile(0.95) by (topology)
+          (cascade_retry_amplification)
+
+      # Stability map boundary density (count of boundary cells)
+      - record: cascade:stability_boundary_density
+        expr: |
+          count by (x_param, y_param, batch_id)
+          (cascade_stability_map_cell{batch_id=~".+"})
+
+      # Fragmentation duration vs recovery_rate (for parameter sensitivity)
+      - record: cascade:recovery_rate:frag_duration_mean
+        expr: |
+          avg by (recovery_rate)
+          (cascade_fragmentation_duration_ms)
+
+      # Outcome class proportion per topology
+      - record: cascade:topology:outcome_proportion
+        expr: |
+          sum by (topology, outcome)
+            (cascade_outcome_total)
+          / ignoring(outcome)
+            sum by (topology) (cascade_outcome_total)
+
+  - name: cascade_stability_histograms
+    interval: 30s
+    rules:
+      # Stability score histogram (overridden by actual data in scrape)
+      - record: cascade:final_stability:bucket_count
+        expr: |
+          sum by (le, batch_id) (cascade_final_stability_bucket)
+
+      # Health score histogram
+      - record: cascade:final_health:bucket_count
+        expr: |
+          sum by (le, batch_id) (cascade_final_health_bucket)
+
+  - name: cascade_phase_alerts
+    interval: 60s
+    rules:
+      # Alert if > 10% of runs end in unrecoverable_partition
+      - alert: HighUnrecoverablePartitionRate
+        expr: |
+          (sum(cascade_outcome_total{outcome="unrecoverable_partition"})
+           / sum(cascade_outcome_total)) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High unrecoverable partition rate"
+          description: "{{ $value | humanizePercentage }} of runs result in network partition"
+
+      # Alert if > 5% of runs enter oscillatory instability
+      - alert: HighOscillationRate
+        expr: |
+          (sum(cascade_outcome_total{outcome="oscillatory_instability"})
+           / sum(cascade_outcome_total)) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Elevated oscillatory instability frequency"
+          description: "{{ $value | humanizePercentage }} of runs show sustained oscillation"
+
+      # Alert if collapse velocity exceeds -0.05 (rapid cascade)
+      - alert: RapidStabilityCollapse
+        expr: |
+          avg(cascade_collapse_velocity) < -0.05
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Rapid stability collapse velocity detected"
+          description: "Mean collapse velocity {{ $value }}/tick indicates fast-propagating cascade"

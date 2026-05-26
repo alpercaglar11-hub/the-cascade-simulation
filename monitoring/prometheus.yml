@@ -1,0 +1,71 @@
+# ─── Cascade Resilience Intelligence — Prometheus Metrics ────────────────────
+# These metrics are exported from simulation batch runs and from the
+# metrics_server during live runs. Suitable for prometheus-server filesystem
+# scrape configs or long-running metrics_server instances.
+#
+# Usage in prometheus.yml scrape_configs:
+#   - job_name: "cascade-resilience"
+#     static_configs:
+#       - targets: ["localhost:9090"]
+
+# ─── Outcome Classification ────────────────────────────────────────────────────
+# outcome label values: full_recovery | partial_recovery |
+#   oscillatory_instability | secondary_collapse |
+#   cascading_fragmentation | unrecoverable_partition
+
+# Total count of simulation runs by outcome class and topology.
+# Use: outcome_distribution_histogram, recovery_rate_calculation
+cascade_outcome_total{batch_id="", outcome="", topology=""} 0
+
+# ─── StabilitySignatures (per-run scalar metrics) ─────────────────────────────
+# Final stability score (0-1 scale, higher = more stable)
+cascade_final_stability_score{batch_id="", topology="", outcome=""} 0
+# Final health score (0-1 scale)
+cascade_final_health_score{batch_id="", topology="", outcome=""} 0
+# Peak fragmentation (number of simultaneous failed nodes)
+cascade_fragmentation_peak{batch_id="", topology="", outcome=""} 0
+# Fragmentation duration in milliseconds
+cascade_fragmentation_duration_ms{batch_id="", topology="", outcome=""} 0
+# Retry storm duration in ticks
+cascade_retry_storm_duration_ticks{batch_id="", topology="", outcome=""} 0
+# Peak retry count during run
+cascade_retry_peak{batch_id="", topology="", outcome=""} 0
+# Stability derivative oscillation count (zero-crossings of stability slope)
+cascade_oscillation_count{batch_id="", topology="", outcome=""} 0
+# Retry amplification factor = retry_peak / node_capacity
+cascade_retry_amplification{batch_id="", topology="", outcome=""} 0
+# Recovery convergence slope (stability_gain_per_tick during recovery phase)
+cascade_recovery_convergence_slope{batch_id="", topology="", outcome=""} 0
+# Collapse velocity (stability drop rate during fragmentation phase, negative)
+cascade_collapse_velocity{batch_id="", topology="", outcome=""} 0
+
+# ─── StabilityMap Heatmap Cells ────────────────────────────────────────────────
+# One entry per parameter-space cell. x/y_value are bin-center values.
+# UsePrometheus Histogram type for heatmap rendering.
+# Label x_param/y_param identify the parameter pair (e.g. recovery_rate/retry_backoff).
+cascade_stability_map_cell{
+  batch_id="", topology="", x_param="", y_param="",
+  x_value="", y_value=""
+} 0
+
+# ─── Phase Transition State Machine ─────────────────────────────────────────────
+# Count of phase transitions, labeled by from_phase/to_phase
+cascade_phase_transition_total{batch_id="", from_phase="", to_phase="", trigger=""} 0
+
+# Counts of runs currently occupying each phase at last tick
+cascade_phase_active_total{batch_id="", phase=""} 0
+
+# ─── Stability Score Histogram Buckets (for distribution histograms) ─────────────
+# These use le (less-than-or-equal) bucket labeling for Prometheus histograms.
+# Buckets: 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0
+cascade_final_stability_bucket{batch_id="", topology="", outcome="", le=""} 0
+cascade_final_health_bucket{batch_id="", topology="", outcome="", le=""} 0
+
+# ─── Latency Distribution Buckets (ms) ────────────────────────────────────────
+cascade_peak_p95_latency_bucket{batch_id="", topology="", outcome="", le=""} 0
+
+# ─── Topology Resilience Ranking ─────────────────────────────────────────────
+# Gauge: current topology resilience rank (lower = better)
+cascade_topology_resilience_rank{batch_id="", topology=""} 0
+# Gauge: mean health score per topology
+cascade_topology_mean_stability_score{batch_id="", topology=""} 0

@@ -1,0 +1,402 @@
+name: Experiment Validation
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # ── Deterministic Replay Validation ──────────────────────────────────────
+  replay-validation:
+    name: Deterministic Replay Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -q prometheus_client flask
+          python -c "import prometheus_client; import flask; print('OK')"
+
+      - name: Run deterministic replay validation
+        run: |
+          python -c "
+          import sys, random, json
+          sys.path.insert(0, '.')
+          from simulations.recovery_engine import RecoveryEngine, load_config
+
+          # Load base config and run twice with same seed
+          cfg = load_config('configs/recovery_test.json')
+          cfg['topology']['seed'] = 42
+
+          eng1 = RecoveryEngine(cfg)
+          history1 = eng1.run()
+
+          eng2 = RecoveryEngine(cfg)
+          history2 = eng2.run()
+
+          # Verify deterministic outcomes
+          assert len(history1) == len(history2), f'Length mismatch: {len(history1)} vs {len(history2)}'
+          for m1, m2 in zip(history1, history2):
+              assert m1.tick == m2.tick, f'Tick mismatch at index'
+              assert abs(m1.global_health_score - m2.global_health_score) < 1e-6, \
+                  f'Health divergence: {m1.global_health_score} vs {m2.global_health_score}'
+              assert abs(m1.stability_score - m2.stability_score) < 1e-6, \
+                  f'Stability divergence: {m1.stability_score} vs {m2.stability_score}'
+              assert m1.recovery_outcome == m2.recovery_outcome, \
+                  f'Outcome mismatch: {m1.recovery_outcome} vs {m2.recovery_outcome}'
+
+          print('PASS: Deterministic replay validation — all ticks identical across two runs')
+          "
+
+  # ── Topology Benchmark Smoke Tests ────────────────────────────────────────
+  topology-smoke:
+    name: Topology Benchmark Smoke Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -q prometheus_client flask
+
+      - name: Run topology benchmark smoke test
+        run: |
+          python -c "
+          import sys, os, json, statistics
+          sys.path.insert(0, '.')
+          from experiments.topology_benchmarks import build_topology_edges
+
+          # Test all four topology generators return valid edge lists
+          for topo in ['mesh', 'ring', 'scale_free', 'hierarchical']:
+              edges = build_topology_edges(topo, 12, seed=42)
+              assert len(edges) > 0, f'{topo}: no edges returned'
+              # No self-loops
+              assert all(i != j for i, j in edges), f'{topo}: self-loop detected'
+              # No duplicate edges (set dedup)
+              assert len(edges) == len(list({e for e in edges})), f'{topo}: duplicate edges'
+              print(f'  {topo}: {len(edges)} edges, OK')
+
+          # Run a single-seed quick benchmark (2 topologies, 2 seeds)
+          from experiments.topology_benchmarks import run_topology_benchmark_suite
+          results = run_topology_benchmark_suite(
+              topologies=['mesh', 'ring'],
+              seeds=[42, 43],
+              output_dir='/tmp/topology_smoke'
+          )
+          assert len(results) == 4, f'Expected 4 runs, got {len(results)}'
+          for r in results:
+              assert r['outcome'] != 'unknown', f'Smoke test run failed: {r}'
+          print('PASS: Topology smoke tests — 4 runs, all successful')
+          "
+
+  # ── Telemetry Schema Consistency ─────────────────────────────────────────
+  schema-consistency:
+    name: Telemetry Schema Consistency
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -q prometheus_client flask
+
+      - name: Verify telemetry schema consistency
+        run: |
+          python -c "
+          import sys, csv, json
+          sys.path.insert(0, '.')
+          from simulations.recovery_engine import RecoveryEngine, load_config
+
+          cfg = load_config('configs/recovery_test.json')
+          cfg['topology']['seed'] = 99
+          eng = RecoveryEngine(cfg)
+          history = eng.run()
+
+          # Verify expected columns exist in telemetry output
+          expected_fields = [
+              'tick', 'time_ms', 'p50_latency', 'p95_latency', 'queue_depth',
+              'retry_count', 'fragmented_nodes', 'stability_score',
+              'global_health_score', 'edge_heat_avg', 'edge_heat_peak',
+              'active_nodes', 'total_requests', 'failed_requests', 'recovery_outcome'
+          ]
+
+          # Check SimulationMetrics dataclass fields match expected schema
+          from simulations.recovery_engine import SimulationMetrics
+          dc_fields = [f.name for f in SimulationMetrics.__dataclass_fields__.values()]
+          assert dc_fields == expected_fields, \
+              f'Telemetry schema drift detected:\n  Expected: {expected_fields}\n  Got:      {dc_fields}'
+
+          # Verify metric bounds across full run
+          for m in history:
+              assert 0 <= m.global_health_score <= 1, \
+                  f'Tick {m.tick}: health score out of range: {m.global_health_score}'
+              assert 0 <= m.stability_score <= 1, \
+                  f'Tick {m.tick}: stability score out of range: {m.stability_score}'
+              assert m.p95_latency >= 0, \
+                  f'Tick {m.tick}: p95_latency negative: {m.p95_latency}'
+              assert 0 <= m.fragmented_nodes <= 12, \
+                  f'Tick {m.tick}: fragmented_nodes out of range: {m.fragmented_nodes}'
+
+          # Validate outcome classification
+          valid_outcomes = {'in_progress', 'full_recovery', 'partial_recovery',
+                            'oscillation', 'secondary_collapse'}
+          for m in history:
+              if m.recovery_outcome not in valid_outcomes and m.tick < 600:
+                  raise AssertionError(f'Tick {m.tick}: unknown outcome {m.recovery_outcome}')
+
+          print(f'PASS: Telemetry schema consistency — {len(history)} ticks validated')
+          print(f'  Schema fields: {len(expected_fields)}')
+          print(f'  Outcome field present in all ticks: OK')
+          print(f'  Health/stability bounded [0,1]: OK')
+          print(f'  p95_latency non-negative: OK')
+          print(f'  fragmented_nodes in [0,12]: OK')
+          "
+
+  # ── Stability Delta Threshold ────────────────────────────────────────────
+  stability-threshold:
+    name: Stability Delta Threshold
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -q prometheus_client flask
+
+      - name: Run stability delta threshold check
+        run: |
+          python -c "
+          import sys, json, statistics
+          sys.path.insert(0, '.')
+          from simulations.recovery_engine import RecoveryEngine, load_config
+
+          THRESHOLD = 0.001  # stability delta threshold from replay_manager
+
+          # Run 3 seeds and verify within-threshold stability across runs
+          for seed in [42, 43, 44]:
+              cfg = load_config('configs/recovery_test.json')
+              cfg['topology']['seed'] = seed
+
+              eng = RecoveryEngine(cfg)
+              history = eng.run()
+
+              final_stability = history[-1].stability_score
+              final_health = history[-1].global_health_score
+
+              # Run again with same seed
+              eng2 = RecoveryEngine(cfg)
+              history2 = eng2.run()
+
+              delta_stability = abs(history2[-1].stability_score - final_stability)
+              delta_health = abs(history2[-1].global_health_score - final_health)
+
+              assert delta_stability < THRESHOLD, \
+                  f'Seed {seed}: stability delta {delta_stability} exceeds threshold {THRESHOLD}'
+              assert delta_health < THRESHOLD, \
+                  f'Seed {seed}: health delta {delta_health} exceeds threshold {THRESHOLD}'
+
+              print(f'  seed={seed}: stability={final_stability:.4f} (Δ={delta_stability:.6f}), '
+                    f'health={final_health:.4f} (Δ={delta_health:.6f}) — OK')
+
+          print(f'PASS: Stability delta threshold — all 3 seeds within {THRESHOLD}')
+          "
+
+  # ── Monte Carlo Sweep Subset (CI micro-validation) ───────────────────────
+  monte-carlo-ci:
+    name: Monte Carlo CI Subset
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -q prometheus_client flask
+
+      - name: Run Monte Carlo CI subset (16 experiments)
+        run: |
+          python experiments/monte_carlo_runner.py \
+            --output-dir /tmp/mc_ci \
+            --experiments 16 \
+            --topologies mesh ring \
+            --recovery-rates 0.15 0.25 \
+            --node-capacities 30 \
+            --latency-multipliers 18.0 \
+            --seeds 42 43
+
+          # Verify output structure
+          import os, json
+          from pathlib import Path
+          base = Path('/tmp/mc_ci')
+          batches = [d for d in os.listdir(base) if d.startswith('batch_')]
+          assert len(batches) == 1, f'Expected 1 batch, got {len(batches)}'
+
+          batch_dir = base / batches[0]
+          assert (batch_dir / 'batch_metadata.json').exists()
+          assert (batch_dir / 'aggregate_summary.json').exists()
+          assert (batch_dir / 'comparative_results.csv').exists()
+
+          # Validate aggregate_summary structure
+          with open(batch_dir / 'aggregate_summary.json') as f:
+              summ = json.load(f)
+          required = ['batch_id', 'recovery_success_rate', 'topology_resilience_ranking',
+                      'outcome_distribution', 'stability_score_distribution']
+          for field in required:
+              assert field in summ, f'Missing required field in aggregate_summary: {field}'
+
+          # Validate comparative_results.csv
+          import csv
+          with open(batch_dir / 'comparative_results.csv') as f:
+              reader = csv.DictReader(f)
+              rows = list(reader)
+          assert len(rows) == 16, f'Expected 16 experiment rows, got {len(rows)}'
+          for row in rows:
+              assert row['outcome'] != '', f'Missing outcome in row: {row}'
+
+          print(f'PASS: Monte Carlo CI subset — 16 experiments, all outputs valid')
+          print(f'  Batch: {batches[0]}')
+          print(f'  Recovery success rate: {summ[\"recovery_success_rate\"]:.3f}')
+          print(f'  Outcome distribution: {summ[\"outcome_distribution\"]}')
+          "
+        working-directory: /home/alper/videolar/MANIM_STUDIO/showcase/the_cascade
+
+  # ── Registry Integration ───────────────────────────────────────────────────
+  registry-integration:
+    name: Experiment Registry Integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -q prometheus_client flask
+
+      - name: Run experiment registry integration test
+        run: |
+          python -c "
+          import sys, json, uuid, tempfile, shutil
+          sys.path.insert(0, '.')
+          from metrics.experiment_registry.experiment_registry import ExperimentRegistry
+
+          # Use a temp registry to avoid pollution
+          tmp = tempfile.mkdtemp()
+          registry = ExperimentRegistry(tmp)
+
+          # Register a synthetic batch
+          batch_id = str(uuid.uuid4())
+          metadata = {
+              'batch_id': batch_id,
+              'started_at': '2025-01-01T00:00:00+00:00',
+              'completed_at': '2025-01-01T00:05:00+00:00',
+              'git_commit': 'deadbeef',
+              'total_runs': 16,
+              'successful_runs': 14,
+              'failed_runs': 2,
+              'param_grid': {
+                  'recovery_rates': [0.15, 0.25],
+                  'retry_backoff_multipliers': [1.35],
+                  'node_capacities': [30],
+                  'topology_types': ['mesh', 'ring'],
+                  'latency_multipliers': [18.0],
+                  'seeds': [42, 43],
+              },
+              'outcome_distribution': {'full_recovery': 8, 'partial_recovery': 6},
+          }
+          summary = {
+              'batch_id': batch_id,
+              'git_commit': 'deadbeef',
+              'started_at': '2025-01-01T00:00:00+00:00',
+              'completed_at': '2025-01-01T00:05:00+00:00',
+              'total_runs': 16,
+              'successful_runs': 14,
+              'recovery_success_rate': 0.875,
+              'topology_resilience_ranking': [
+                  {'topology': 'mesh', 'avg_health': 0.823},
+                  {'topology': 'ring', 'avg_health': 0.751},
+              ],
+              'oscillation_frequency': 0.0625,
+              'fragmentation': {'avg_duration_ms': 187.5, 'count': 12},
+              'p95_latency_distributions': {
+                  'mesh': {'mean': 195.2, 'p95': 218.4, 'min': 150.1, 'max': 280.0, 'n': 8},
+                  'ring': {'mean': 210.3, 'p95': 235.0, 'min': 162.0, 'max': 310.0, 'n': 8},
+              },
+              'stability_score_distribution': {'mean': 0.72, 'min': 0.58, 'max': 0.91, 'std': 0.09},
+              'outcome_distribution': {'full_recovery': 8, 'partial_recovery': 6},
+          }
+
+          # Write a dummy CSV
+          csv_dir = tempfile.mkdtemp()
+          csv_path = csv_dir + '/comparative_results.csv'
+          with open(csv_path, 'w') as f:
+              f.write('run_id,outcome,final_health,topology\\n')
+              f.write('run_001,full_recovery,0.823,mesh\\n')
+
+          entry = registry.register_batch(batch_id, metadata, summary, csv_path)
+
+          # Verify registry state
+          retrieved = registry.get_batch(batch_id)
+          assert retrieved is not None, 'Batch not found after registration'
+          assert retrieved['batch_id'] == batch_id
+
+          loaded_meta = registry.get_batch_metadata(batch_id)
+          assert loaded_meta['total_runs'] == 16
+
+          loaded_summ = registry.get_aggregate_summary(batch_id)
+          assert loaded_summ['recovery_success_rate'] == 0.875
+
+          # list_batches
+          batches = registry.list_batches()
+          assert len(batches) == 1
+          assert batches[0]['batch_id'] == batch_id
+
+          # find_batches by topology
+          mesh_batches = registry.find_batches(topology='mesh')
+          assert len(mesh_batches) == 1
+
+          # registry_stats
+          stats = registry.registry_stats()
+          assert stats['total_batches'] == 1
+          assert stats['total_experiments_run'] == 16
+
+          print('PASS: Experiment registry integration — register, retrieve, list, find, stats all OK')
+
+          shutil.rmtree(tmp)
+          shutil.rmtree(csv_dir)
+          "
+        working-directory: /home/alper/videolar/MANIM_STUDIO/showcase/the_cascade
+
+concurrency:
+  group: experiment-validation-${{ github.ref }}
+  cancel-in-progress: true

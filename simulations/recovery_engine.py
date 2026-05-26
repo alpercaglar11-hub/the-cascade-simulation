@@ -299,9 +299,28 @@ class RecoveryEngine:
         total = len(self.nodes)
         recovered = sum(1 for n in self.nodes.values()
                         if not n.fragmented and not n.failed)
-        osc_penalty = 0.15 if self.retry_volume > 20 else 0.0
 
-        stability = (recovered / total) - osc_penalty
+        # ── Retry-storm oscillation penalty ──────────────────────────────────
+        # retry_volume is driven by retry storms during FRAGMENTATION phase.
+        # When it exceeds capacity threshold, oscillations become sustained.
+        rm = self.cfg["retry_storm_model"]
+        osc_prob = rm.get("oscillation_probability", 0.0)
+        storm_capacity = self.cfg["node_defaults"]["base_capacity"] \
+                        * rm["retry_threshold_multiplier"]
+
+        osc_penalty = 0.0
+        if self.retry_volume > storm_capacity:
+            # Sustained storm: apply oscillating penalty driven by retry volume
+            # Higher retry volume → larger oscillation amplitude
+            excess_ratio = min(1.0, (self.retry_volume - storm_capacity) / storm_capacity)
+            osc_penalty = 0.15 + (osc_prob * 0.25 * excess_ratio)
+        elif self.retry_volume > storm_capacity * 0.5:
+            # Light storm: probabilistic small penalty
+            if self._rng.random() < osc_prob:
+                osc_penalty = 0.05 + osc_prob * 0.10
+
+        base_stability = recovered / total
+        stability = base_stability - osc_penalty
         stability = max(0.0, min(1.0, stability))
 
         # ── Build a minimal metrics history from current state ──────────────
@@ -424,7 +443,18 @@ class RecoveryEngine:
             fragmented = sum(1 for n in self.nodes.values() if n.fragmented)
             recovered = sum(1 for n in self.nodes.values()
                             if not n.fragmented and not n.failed)
-            osc_pen = 0.15 if self.retry_volume > 20 else 0.0
+            # Same oscillation penalty logic for non-RECOVERY_OUTCOME ticks
+            rm = self.cfg["retry_storm_model"]
+            osc_prob = rm.get("oscillation_probability", 0.0)
+            storm_capacity = self.cfg["node_defaults"]["base_capacity"] \
+                            * rm["retry_threshold_multiplier"]
+            if self.retry_volume > storm_capacity:
+                excess_ratio = min(1.0, (self.retry_volume - storm_capacity) / storm_capacity)
+                osc_pen = 0.15 + (osc_prob * 0.25 * excess_ratio)
+            elif self.retry_volume > storm_capacity * 0.5:
+                osc_pen = (0.05 + osc_prob * 0.10) if self._rng.random() < osc_prob else 0.0
+            else:
+                osc_pen = 0.0
             stability = max(0.0, (recovered / len(self.nodes)) - osc_pen)
 
         # If outcome is still None (never reached RECOVERY_OUTCOME phase),

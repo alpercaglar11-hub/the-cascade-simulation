@@ -1,0 +1,15 @@
+# Grafana dashboard provisioning
+# File: monitoring/grafana/provisioning/dashboards/dashboards.yml
+apiVersion: 1
+
+providers:
+  - name: 'Cascade Resilience Intelligence'
+    orgId: 1
+    folder: 'Cascade'
+    folderUid: 'cascade'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

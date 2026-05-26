@@ -93,12 +93,23 @@ class BatchStabilityMapper:
     # ── Data loading ─────────────────────────────────────────────────────────
 
     def load_results(self) -> List[dict]:
-        """Load all run results from a batch directory."""
-        csv_path = self.batch_dir / "comparative_results.csv"
-        if not csv_path.exists():
-            raise FileNotFoundError(f"No comparative_results.csv in {self.batch_dir}")
+        """Load all run results from a batch directory.
 
-        with open(csv_path) as f:
+        Prefer comparative_results_augmented.csv if available (contains taxonomy
+        fields added by run_classification), otherwise fall back to the base
+        comparative_results.csv written by the Monte Carlo runner.
+        """
+        aug_path = self.batch_dir / "comparative_results_augmented.csv"
+        csv_path = self.batch_dir / "comparative_results.csv"
+        use_path = aug_path if aug_path.exists() else csv_path
+
+        if not use_path.exists():
+            raise FileNotFoundError(
+                f"Neither comparative_results_augmented.csv nor "
+                f"comparative_results.csv found in {self.batch_dir}"
+            )
+
+        with open(use_path) as f:
             reader = csv.DictReader(f)
             self.results = list(reader)
 

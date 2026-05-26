@@ -1,0 +1,129 @@
+version: "3.9"
+
+services:
+  # ── Simulation Engine ───────────────────────────────────────────────────────
+  simulation-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: cascade_simulation_engine
+    environment:
+      # Seed for deterministic runs — override in docker-compose override or env
+      CASCADE_SEED: "42"
+      CASCADE_CONFIG: "configs/recovery_test.json"
+      CASCADE_OUTPUT_DIR: "/app/metrics"
+      CASCADE_NO_RENDER: "true"
+      # Metrics server port exposed to host
+      METRICS_PORT: "9090"
+    ports:
+      - "9090:9090"           # Prometheus metrics endpoint
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./metrics:/app/metrics
+      - ./replays:/app/replays
+      - ./monitoring:/app/monitoring
+    networks:
+      - cascade-net
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9090/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    command: ["--config", "configs/recovery_test.json", "--engine-only"]
+
+  # ── Prometheus ──────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: cascade_prometheus
+    ports:
+      - "9091:9090"           # Web UI on :9091
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=15d'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--alertmanager.notify-interval=10s'
+      - '--alertmanager.http2=false'
+    networks:
+      - cascade-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── Grafana ──────────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: cascade_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: cascade
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ALERTING_ENABLED: "true"
+      GF_UNIFIED_ALERTING_ENABLED: "true"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - prometheus_data:/var/lib/grafana/provisioning/datasources/prometheus_data:ro
+    networks:
+      - cascade-net
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── Jaeger (Distributed Tracing) ─────────────────────────────────────────────
+  jaeger:
+    image: jaegertracing/all-in-one:1.58.0
+    container_name: cascade_jaeger
+    ports:
+      - "16686:16686"          # UI
+      - "4317:4317"           # OTLP gRPC
+      - "4318:4318"           # OTLP HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - SPAN_FORMAT=jaeger
+    networks:
+      - cascade-net
+    restart: unless-stopped
+
+  # ── Alertmanager ──────────────────────────────────────────────────────────────
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: cascade_alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    networks:
+      - cascade-net
+    restart: unless-stopped
+
+# ── Networks ────────────────────────────────────────────────────────────────────
+
+networks:
+  cascade-net:
+    driver: bridge
+
+# ── Volumes ───────────────────────────────────────────────────────────────────
+
+volumes:
+  prometheus_data:
+  grafana_data:

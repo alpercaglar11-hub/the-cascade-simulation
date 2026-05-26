@@ -368,6 +368,44 @@ def build_aggregate_summary(
     }
 
 
+def _write_batch_phase_transitions(batch_dir: Path, run_dirs: List[Path]):
+    """
+    Aggregate per-run phase_transitions.csv files into a single batch-level
+    metrics/phase_transitions.csv.
+
+    Structure: run_id, tick, time_ms, phase, stability_score,
+               fragmented_nodes, retry_count, is_transition
+    """
+    out_path = batch_dir / "phase_transitions.csv"
+    fieldnames = [
+        "run_id", "tick", "time_ms", "phase",
+        "stability_score", "fragmented_nodes", "retry_count", "is_transition",
+    ]
+
+    rows_written = 0
+    try:
+        with open(out_path, "w", newline="") as out_f:
+            writer = csv.DictWriter(out_f, fieldnames=fieldnames)
+            writer.writeheader()
+
+            for run_dir in run_dirs:
+                pt_path = run_dir / "resilience" / "phase_transitions.csv"
+                if not pt_path.exists():
+                    continue
+                with open(pt_path, newline="") as in_f:
+                    reader = csv.DictReader(in_f)
+                    for row in reader:
+                        writer.writerow({
+                            "run_id": run_dir.name,
+                            **{k: row.get(k, "") for k in fieldnames if k != "run_id"},
+                        })
+                        rows_written += 1
+
+        print(f"[run_classification] phase_transitions.csv: {rows_written} rows from {len(run_dirs)} runs")
+    except Exception as exc:
+        print(f"[run_classification] phase_transitions.csv export failed (non-fatal): {exc}")
+
+
 # ── Main batch processor ──────────────────────────────────────────────────────
 
 def process_batch(batch_dir: Path) -> Dict:
@@ -427,14 +465,12 @@ def process_batch(batch_dir: Path) -> Dict:
 
     # ── Stability maps ──────────────────────────────────────────────────────
     try:
-        # BatchStabilityMapper reads comparative_results.csv which was augmented
-        # by this script above (comparative_results_augmented.csv was written first,
-        # but load_results() reads comparative_results.csv — check which exists)
+        # BatchStabilityMapper.load_results() now prefers
+        # comparative_results_augmented.csv when available (contains taxonomy fields).
         mapper = BatchStabilityMapper(str(batch_dir))
-        # Load the standard results path; if augmented CSV was written, it's a superset
-        mapper.load_results()  # reads comparative_results.csv
+        mapper.load_results()
         if not mapper.results:
-            # Fallback: try augmented CSV
+            # Fallback: try augmented CSV directly
             aug_path = batch_dir / "comparative_results_augmented.csv"
             if aug_path.exists():
                 import csv as _csv
@@ -449,6 +485,9 @@ def process_batch(batch_dir: Path) -> Dict:
         import traceback as _tb
         _tb.print_exc()
         print(f"[run_classification] Stability map generation failed (non-fatal): {exc}")
+
+    # ── Aggregate phase transitions to batch-level CSV ─────────────────────
+    _write_batch_phase_transitions(batch_dir, run_dirs)
 
     # ── Comparative results CSV (augmented with taxonomy fields) ────────────
     csv_path = batch_dir / "comparative_results.csv"

@@ -1,0 +1,120 @@
+groups:
+  - name: cascade_recovery_engine
+    interval: 5s
+    rules:
+      # ── High latency alert ──────────────────────────────────────────────────
+      - alert: CascadeP95LatencyHigh
+        expr: cascade_p95_latency > 200
+        for: 10s
+        labels:
+          severity: warning
+          component: latency
+        annotations:
+          summary: "P95 latency exceeds 200ms"
+          description: "P95 latency is {{ $value }}ms for 10 seconds"
+
+      - alert: CascadeP95LatencyCritical
+        expr: cascade_p95_latency > 400
+        for: 5s
+        labels:
+          severity: critical
+          component: latency
+        annotations:
+          summary: "P95 latency exceeds 400ms — fragmentation likely"
+          description: "P95 latency is {{ $value }}ms. Check for node failures."
+
+      # ── Retry storm alert ──────────────────────────────────────────────────
+      - alert: CascadeRetryStormActive
+        expr: cascade_retry_count > 100
+        for: 15s
+        labels:
+          severity: warning
+          component: retry-storm
+        annotations:
+          summary: "Retry storm intensity elevated"
+          description: "Retry volume is {{ $value }} — potential cascade event"
+
+      - alert: CascadeRetryStormSevere
+        expr: cascade_retry_count > 250
+        for: 5s
+        labels:
+          severity: critical
+          component: retry-storm
+        annotations:
+          summary: "Severe retry storm — secondary collapse risk"
+          description: "Retry volume at {{ $value }}. Circuit breakers may be failing."
+
+      # ── Fragmentation alert ───────────────────────────────────────────────
+      - alert: CascadeFragmentationDetected
+        expr: cascade_fragmented_nodes >= 3
+        for: 5s
+        labels:
+          severity: warning
+          component: fragmentation
+        annotations:
+          summary: "Network fragmentation detected"
+          description: "{{ $value }} nodes fragmented at tick {{ $labels.tick }}"
+
+      - alert: CascadeMassFragmentation
+        expr: cascade_fragmented_nodes >= 7
+        for: 3s
+        labels:
+          severity: critical
+          component: fragmentation
+        annotations:
+          summary: "Mass fragmentation event — recovery failed"
+          description: "{{ $value }} of 12 nodes fragmented. Secondary collapse in progress."
+
+      # ── Health score alerts ───────────────────────────────────────────────
+      - alert: CascadeHealthDegraded
+        expr: cascade_global_health_score < 0.6
+        for: 10s
+        labels:
+          severity: warning
+          component: health
+        annotations:
+          summary: "Global health score degraded"
+          description: "Health score is {{ $value }}. System under sustained contention."
+
+      - alert: CascadeHealthCritical
+        expr: cascade_global_health_score < 0.3
+        for: 5s
+        labels:
+          severity: critical
+          component: health
+        annotations:
+          summary: "Critical health — imminent system failure"
+          description: "Health score: {{ $value }}. Initiate manual recovery procedures."
+
+      # ── Stability alerts ──────────────────────────────────────────────────
+      - alert: CascadeStabilityLow
+        expr: cascade_stability_score < 0.5
+        for: 15s
+        labels:
+          severity: warning
+          component: stability
+        annotations:
+          summary: "Stability score below 0.5 — oscillation risk"
+          description: "Stability score: {{ $value }}. Retry storms may be amplifying."
+
+      # ── Queue depth alerts ───────────────────────────────────────────────
+      - alert: CascadeQueuePressureHigh
+        expr: cascade_queue_depth > 800
+        for: 10s
+        labels:
+          severity: warning
+          component: queue
+        annotations:
+          summary: "Queue depth elevated — potential congestion"
+          description: "Queue depth: {{ $value }}"
+
+      # ── Edge heat alerts ─────────────────────────────────────────────────
+      - alert: CascadeEdgeHeatCritical
+        expr: cascade_edge_heat_peak > 0.85
+        for: 5s
+        labels:
+          severity: warning
+          component: network
+        annotations:
+          summary: "Edge heat peak critical — network congestion"
+          description: "Peak edge heat: {{ $value }}"

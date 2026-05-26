@@ -51,11 +51,39 @@ BASE_DIR = Path(__file__).parent.parent
 # ── Experiment parameter grids ─────────────────────────────────────────────────
 
 PARAM_GRID = {
+    # ── Standard sweep grid (recovery region) ──────────────────────────────
     "recovery_rate":        [0.10, 0.15, 0.20, 0.25, 0.30],
     "retry_backoff_multiplier": [1.10, 1.25, 1.35, 1.50, 1.75],
-    "node_capacity":       [15, 30, 45, 60],          # base_capacity
+    "node_capacity":       [15, 30, 45, 60],
     "topology_type":       ["mesh", "ring", "scale_free", "hierarchical"],
     "latency_injection_multiplier": [8.0, 14.0, 18.0, 24.0, 30.0],
+}
+
+# ── Harsh parameter grid (failure boundary exploration) ───────────────────
+# Designed to push the system past the fragmentation boundary and surface
+# oscillatory_instability, cascading_fragmentation, secondary_collapse,
+# and unrecoverable_partition outcomes.
+#
+# Parameter choices explained:
+#   recovery_rate 0.02–0.05 :   Recovery is too slow; fragmented nodes stay
+#                                failed long enough for cascade to spread
+#   retry_backoff 2.5–3.0  :   Exponential back-off is aggressive enough
+#                                to create sustained stability oscillations
+#   node_capacity 5–8       :   Queue buffers are small; overflow happens
+#                                early, triggering load-shedding cascades
+#   spreading_factor 0.70–0.80 : Neighbor propagation is near-deterministic;
+#                                initial failure spreads to most of topology
+#   latency_mult 50–80     :   Injected latency is catastrophic (50–80x
+#                                baseline); threshold breach is unambiguous
+#   max_queue_depth 60      :   Shallow queues amplify retry storms since
+#                                retries are dropped faster
+
+FAILURE_BOUNDARY_GRID = {
+    "recovery_rate":        [0.02, 0.05],
+    "retry_backoff_multiplier": [2.5, 3.0],
+    "node_capacity":        [5, 8],
+    "topology_type":        ["mesh", "ring", "scale_free", "hierarchical"],
+    "latency_injection_multiplier": [50.0, 80.0],
 }
 
 # Seeds for deterministic reproducibility across all experiments.
@@ -72,17 +100,33 @@ def make_experiment_config(
     topology_type: str,
     latency_multiplier: float,
     seed: int,
+    failure_boundary: bool = False,
 ) -> dict:
     """
     Build a recovery_test.json-compatible config dict.
     All derived params are computed from the input grid values.
+    When failure_boundary=True, spreading_factor and max_queue_depth
+    are set to push the system into the fragmentation regime.
     """
+    # Harsh defaults for failure boundary runs
+    if failure_boundary:
+        spreading_factor = 0.75       # near-deterministic neighbor propagation
+        max_queue_depth = 60           # shallow queues → faster overflow
+        retry_storm_oscillation_prob = 0.55  # high oscillation probability
+        fragmentation_threshold_ms = 30  # stricter threshold (was 40)
+    else:
+        spreading_factor = 0.35
+        max_queue_depth = 200
+        retry_storm_oscillation_prob = 0.22
+        fragmentation_threshold_ms = 40
+
     return {
         "simulation_name": "mc_sweep",
         "description": (
             f"MC sweep: recovery={recovery_rate}, backoff={retry_backoff}, "
             f"capacity={node_capacity}, topo={topology_type}, "
             f"latency_mult={latency_multiplier}, seed={seed}"
+            + (" [FAILURE_BOUNDARY]" if failure_boundary else "")
         ),
         "topology": {
             "type": topology_type,
@@ -95,10 +139,10 @@ def make_experiment_config(
             "latency_multiplier": latency_multiplier,
             "failure_tick": 120,
             "recovery_tick": 280,
-            "fragmentation_threshold_ms": 40,
+            "fragmentation_threshold_ms": fragmentation_threshold_ms,
         },
         "_fragmentation": {
-            "spreading_factor": 0.35,
+            "spreading_factor": spreading_factor,
             "min_nodes_frag": 3,
         },
         "recovery": {
@@ -107,7 +151,7 @@ def make_experiment_config(
             "recovery_rate": recovery_rate,
             "traffic_decay_half_life_ticks": 18,
             "retry_backoff_multiplier": retry_backoff,
-            "max_queue_depth": 200,
+            "max_queue_depth": max_queue_depth,
             "rate_limit_tokens_per_tick": 60,
             "load_shed_fraction": 0.25,
         },
@@ -115,7 +159,7 @@ def make_experiment_config(
             "retry_threshold_multiplier": 1.4,
             "storm_latency_amplifier": 2.2,
             "storm_queue_inflation": 1.6,
-            "oscillation_probability": 0.22,
+            "oscillation_probability": retry_storm_oscillation_prob,
         },
         "node_defaults": {
             "base_latency_ms": 12,
@@ -281,6 +325,7 @@ def generate_experiment_batch(
     latency_multipliers: Optional[List[float]] = None,
     seeds: Optional[List[int]] = None,
     max_experiments: Optional[int] = None,
+    failure_boundary: bool = False,
 ) -> List[Tuple[dict, int, Path]]:
     """
     Enumerate the full parameter grid or a constrained subset.
@@ -289,11 +334,12 @@ def generate_experiment_batch(
         List of (config_dict, seed, output_path) tuples.
         Output path is a Path under <output_dir>/run_<index>_<topology>_<seed>/
     """
-    recovery_rates = recovery_rates or PARAM_GRID["recovery_rate"]
-    retry_backoffs = retry_backoff_multipliers or PARAM_GRID["retry_backoff_multiplier"]
-    node_caps = node_capacities or PARAM_GRID["node_capacity"]
-    topos = topology_types or PARAM_GRID["topology_type"]
-    lat_mults = latency_multipliers or PARAM_GRID["latency_injection_multiplier"]
+    active_grid = FAILURE_BOUNDARY_GRID if failure_boundary else PARAM_GRID
+    recovery_rates = recovery_rates or active_grid["recovery_rate"]
+    retry_backoffs = retry_backoff_multipliers or active_grid["retry_backoff_multiplier"]
+    node_caps = node_capacities or active_grid["node_capacity"]
+    topos = topology_types or active_grid["topology_type"]
+    lat_mults = latency_multipliers or active_grid["latency_injection_multiplier"]
     seeds = seeds or SWEEP_SEEDS
 
     configs = []
@@ -311,17 +357,21 @@ def generate_experiment_batch(
                                 topology_type=topo,
                                 latency_multiplier=lm,
                                 seed=seed,
+                                failure_boundary=failure_boundary,
                             )
                             path = Path(f"run_{idx:04d}_{topo}_{seed}")
                             configs.append((cfg, seed, path))
                             idx += 1
 
     if max_experiments is not None and len(configs) > max_experiments:
-        # Sample evenly across parameter grid: take every Nth config where
-        # N = total_configs / max_experiments. This ensures each recovery_rate
-        # value and each topology appears in the subset.
-        step = len(configs) / max_experiments
-        configs = [configs[min(int(i * step), len(configs) - 1)] for i in range(max_experiments)]
+        # Randomly sample max_experiments configs from the full grid.
+        # Fixed seed (42) ensures reproducibility across runs.
+        import random
+        rng = random.Random(42)
+        rng.shuffle(configs)
+        configs = configs[:max_experiments]
+        # Re-sort by seed then topology for deterministic output order
+        configs.sort(key=lambda x: (x[1], x[0].get("topology", {}).get("type", ""), x[2].name))
 
     return configs
 
@@ -339,6 +389,7 @@ def run_sweep(
     max_workers: Optional[int] = None,
     max_experiments: Optional[int] = None,
     enable_metrics: bool = False,
+    failure_boundary: bool = False,
 ) -> Dict:
     """
     Execute the full parameter sweep.
@@ -363,16 +414,19 @@ def run_sweep(
     except Exception:
         git_hash = "unknown"
 
+    active_grid = FAILURE_BOUNDARY_GRID if failure_boundary else PARAM_GRID
+
     metadata = {
         "batch_id": batch_id,
         "started_at": start_ts,
         "git_commit": git_hash,
+        "param_grid_source": "FAILURE_BOUNDARY_GRID" if failure_boundary else "PARAM_GRID",
         "param_grid": {
-            "recovery_rates": recovery_rates or PARAM_GRID["recovery_rate"],
-            "retry_backoff_multipliers": retry_backoff_multipliers or PARAM_GRID["retry_backoff_multiplier"],
-            "node_capacities": node_capacities or PARAM_GRID["node_capacity"],
-            "topology_types": topology_types or PARAM_GRID["topology_type"],
-            "latency_multipliers": latency_multipliers or PARAM_GRID["latency_injection_multiplier"],
+            "recovery_rates": recovery_rates or active_grid["recovery_rate"],
+            "retry_backoff_multipliers": retry_backoff_multipliers or active_grid["retry_backoff_multiplier"],
+            "node_capacities": node_capacities or active_grid["node_capacity"],
+            "topology_types": topology_types or active_grid["topology_type"],
+            "latency_multipliers": latency_multipliers or active_grid["latency_injection_multiplier"],
             "seeds": seeds or SWEEP_SEEDS,
         },
     }
@@ -388,6 +442,7 @@ def run_sweep(
         latency_multipliers=latency_multipliers,
         seeds=seeds,
         max_experiments=max_experiments,
+        failure_boundary=failure_boundary,
     )
 
     total = len(experiments)
@@ -499,7 +554,7 @@ def run_sweep(
 
     # ── Research report generation ──────────────────────────────────────────
     try:
-        from experiments.generate_batch_report import generate_batch_report
+        from experiments.reports.generate_batch_report import generate_batch_report
 
         report_path = generate_batch_report(batch_root, aggregate)
         if report_path:
@@ -667,6 +722,12 @@ if __name__ == "__main__":
     parser.add_argument("--replay-seed", type=int, default=None, help="Single run with specific seed")
     parser.add_argument("--enable-metrics", action="store_true", help="Start Prometheus metrics server per run")
 
+    parser.add_argument("--failure-boundary", action="store_true",
+                        help="Use FAILURE_BOUNDARY_GRID instead of PARAM_GRID "
+                             "(pushes system past fragmentation boundary to surface "
+                             "oscillatory_instability, secondary_collapse, "
+                             "cascading_fragmentation, unrecoverable_partition)")
+
     args = parser.parse_args()
 
     if args.replay_seed:
@@ -695,5 +756,6 @@ if __name__ == "__main__":
         max_workers=args.workers,
         max_experiments=args.experiments,
         enable_metrics=args.enable_metrics,
+        failure_boundary=args.failure_boundary,
     )
     print(json.dumps(result, indent=2))
