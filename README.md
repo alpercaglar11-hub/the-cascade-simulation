@@ -283,80 +283,120 @@ make clean-all
 
 ## AI-Powered Predictive Resilience
 
-A supervised ML layer trained on simulation telemetry to detect critical failure modes — `oscillatory_instability` and `secondary_collapse` — before they fully manifest. The notebook `experiments/ai_failure_prediction.ipynb` is the primary artifact.
+A supervised ML layer trained on multi-batch simulation telemetry to detect critical failure modes — `oscillatory_instability` and `secondary_collapse` — before they fully manifest. The notebook `experiments/ai_failure_prediction.ipynb` is the primary artifact.
+
+### ⚠️ Validation Strategy — Why the Original AUC=1.0 Was Misleading
+
+**Problem identified in v1:** The initial train/test split assigned all 4 oscillatory_instability runs to the test set and zero to the training set. The model trained exclusively on partial_recovery runs, then achieved AUC-ROC=1.0 on the test set — not because it learned a generalizable signal, but because the test set happened to contain the exact failure patterns the model had never seen in training.
+
+**Fix applied in v2:**
+- Combined 3 batches (64 total runs, 22 critical, 34.4% positive rate)
+- 5-fold **GroupKFold** (grouped by run_id): no run appears in more than one fold, preventing temporal leakage
+- Held-out test set is stratified to contain both critical and non-critical runs
+- Cross-validation gives the primary generalization estimate; held-out set is used only for SHAP analysis
 
 ### Architecture
 
 ```
-Simulation Runs (batch_20260526_001331)
-    ├── phase_transitions.csv       19,200 tick-level telemetry rows
-    ├── comparative_results_augmented.csv   per-run taxonomy labels
-    └── aggregate_taxonomy_summary.json     batch-level statistics
+Three Batch Sources (combined)
+    ├── batch_20260526_001244  16 runs (all oscillatory_instability)
+    ├── batch_20260526_001138  16 runs (2 oscillatory + 14 partial_recovery)
+    └── batch_20260526_001331  32 runs (4 oscillatory + 28 partial_recovery)
 
-                         Feature Engineering
+    Total: 64 runs, 22 critical (34.4% positive rate)
+
+                         Feature Engineering (18 features)
     ├── Rolling statistics (mean/std/min over 20-tick windows)
     ├── Stability acceleration (second derivative of rolling mean)
     ├── Oscillation metrics (retry zero-crossing rate, rolling std)
     ├── Fragmentation persistence slope (30-tick polyfit)
     ├── Time-since-stable counter
+    ├── Phase state encoding (stable→collapse)
     └── Topology encoding (mesh/ring/scale_free/hierarchical → 0/1/2/3)
 
                          XGBoost Classifier
-    ├── 18 features, n_estimators=300, max_depth=6
-    ├── Trained on full batch (19,200 samples, 600 critical = 3.1% positive rate)
-    └── scale_pos_weight=31.0 to handle class imbalance
+    ├── 18 features, n_estimators=200, max_depth=5, lr=0.05
+    ├── Trained on all 64 runs (96,000 samples, 37,200 critical)
+    └── scale_pos_weight=1.6 (dynamic per fold)
 
-                         SHAP Explainability
-    └── Per-sample feature attribution with game-theoretic fairness
+                         Validation: 5-Fold GroupKFold (no temporal leakage)
+    └── Each fold: ~51 runs train, ~13 runs test, both outcome types present
 ```
 
-### Experiment Results (batch_20260526_001331)
+### Experiment Results (v2 — Corrected)
+
+**Primary Validation: 5-Fold GroupKFold Cross-Validation**
+
+| Metric | Mean ± Std | Range |
+|---|---|---|
+| **AUC-ROC** | 0.7649 ± 0.0386 | 0.724–0.818 |
+| **Avg Precision** | 0.6862 ± 0.1166 | 0.557–0.816 |
+| **Critical Recall** | 0.6178 ± 0.1458 | 0.383–0.770 |
+| **Critical Precision** | 0.6456 ± 0.2295 | 0.379–0.899 |
+
+**Aggregated Confusion Matrix (all folds combined):** TP=23,307  TN=43,414  FP=15,386  FN=13,893
+→ Aggregated Recall: 0.627 | Aggregated Precision: 0.602
+
+**Held-Out Test Set (20% of runs, stratified):**
 
 | Metric | Value |
 |---|---|
-| **AUC-ROC** | 1.0000 |
-| **Critical Precision** | 1.0 |
-| **Critical Recall** | 1.0 |
-| **Test Set** | 4,200 samples / 7 runs |
-| **Positive Rate** | 14.3% (test), 3.1% (full) |
+| **AUC-ROC** | 0.7798 |
+| **Avg Precision** | 0.7104 |
+| **Critical Precision** | 0.416 |
+| **Critical Recall** | 0.801 |
+| **Positive Rate** | 32.3% |
 
-**Top SHAP Features** (mean |SHAP value|):
-1. `topology_id` (6.92) — hub vs connected topology is the dominant differentiator
-2. `roll_retry_count_max` (0.67) — peak retry pressure is the strongest failure signal
-3. `roll_stability_score_min` (0.47) — minimum rolling stability captures fragmentation depth
-4. `roll_retry_count_mean` (0.43) — sustained elevated retry count amplifies instability
-5. `since_stable` (0.40) — time elapsed since last stable state predicts recovery probability
+**CV vs Held-Out Gap:** CV Mean=0.7649, Held-Out=0.7798, Gap=−0.0149 → **model generalizes well to unseen configs** (gap < 0.05).
+
+**Fold Stability:** AUC-ROC coefficient of variation = 5.1% → **GOOD** (std < 10% of mean)
+
+### Top SHAP Features (held-out test set, mean |value|)
+
+1. `topology_id` (0.4957) — network topology structure is the primary differentiator between critical and non-critical runs
+2. `since_stable` (0.3287) — elapsed time since last stable tick (stability > 0.95) is the strongest failure precursor
+3. `roll_retry_count_mean` (0.2021) — sustained elevated retry pressure captures coordination protocol degradation
+4. `roll_retry_count_std` (0.1777) — oscillation amplitude in retry volume flags unstable recovery attempts
+5. `tick` (0.1479) — failure timing within the simulation run correlates with outcome severity
 
 ### Key Findings
 
-**Topology Hierarchy of Fragility** (test set, 7 runs):
-- `scale_free`: failure_rate=1.0, predicted=0.962, mean_stability=0.663
-- Hub-based topologies (scale_free, hierarchical) fragment faster than connected topologies (mesh, ring) under asymmetric load because hub removal disconnects all spoke neighbors simultaneously.
+**Topology Hierarchy of Fragility** (held-out test set):
+- `scale_free`: failure rate varies by hub connectivity — hub removal disconnects all spokes simultaneously
+- Hub-based topologies (scale_free, hierarchical) fragment faster than connected topologies (mesh, ring) under asymmetric load
+- Connected topologies show structural resilience: single-node failure leaves the ring intact as a subgraph
 
-**Oscillation Pattern Detection**:
-- `roll_retry_count_max` and `retry_zcr` together capture the oscillation wave pattern
-- The model learned that sustained retry pressure > 2 ticks ahead is the primary oscillation precursor
-- topology_id dominance indicates the failure mode itself is topology-structured, not parameter-structured
+**Generalization Assessment:**
+- AUC-ROC coefficient of variation = 5.1% across 5 folds → model performance is stable across held-out run groups
+- Gap between CV mean (0.7649) and held-out (0.7798) = −0.0149 → model does not overfit to training distribution
+- Critical recall (0.801 on held-out) indicates the model catches most failure events, but critical precision (0.416) reflects class imbalance challenges in the imbalanced regime
 
-**Failure Mode Distribution** (32-run batch):
-- `oscillatory_instability`: 4 runs (12.5%) — retry/fragmentation loop without full recovery
-- `partial_recovery`: 28 runs (87.5%) — system stabilizes but at reduced health
+**Oscillation Pattern Detection:**
+- `since_stable` dominates SHAP — the model learned that extended instability duration is the primary oscillation precursor
+- `roll_retry_count_std` captures the oscillation wave pattern: retry volume variance flags unstable recovery attempts
+- topology_id as #1 feature confirms the failure mode is topology-structured, not purely parameter-structured
+
+**Outcome Distribution (all 64 runs):**
+- `oscillatory_instability`: 22 runs (34.4%)
+- `partial_recovery`: 42 runs (65.6%)
 
 ### How to Reproduce
 
 ```bash
-# Re-run the full experiment
-python experiments/monte_carlo_runner.py --batch-id 20260526_001331
-
-# Re-execute the notebook (generates all plots + report)
+# Re-run the notebook (generates all plots + report)
 jupyter nbconvert --to notebook --execute --inplace \
     experiments/ai_failure_prediction.ipynb
 
 # View the text report
-cat experiments/reports/ai_failure_prediction_report.txt
+cat experiments/reports/ai_failure_prediction_report_v2.txt
+
+# Re-run Monte Carlo batches
+python experiments/monte_carlo_runner.py --experiments 32 --batch-id batch_20260526_001244
+python experiments/monte_carlo_runner.py --experiments 16 --batch-id batch_20260526_001138
+python experiments/monte_carlo_runner.py --experiments 32 --batch-id batch_20260526_001331
 ```
 
-### Positioning
+### Why This Matters for AI Engineering
 
 This simulation + ML pipeline serves as a **foundation for self-healing AI systems** research:
 
